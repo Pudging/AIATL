@@ -414,10 +414,10 @@ export default function GameViewPage() {
       const now = Date.now();
       const elapsedSinceSync = now - syncAnchor.realWorldTime;
       
-      // Calculate target NBA timestamp: anchor + elapsed time - manual adjustment
-      // Manual adjustment SLOWS DOWN progression (positive = stay on older game states longer)
-      // This accounts for the time it took to type in the sync time
-      const targetNbaTimestamp = syncAnchor.nbaTimestamp + elapsedSinceSync - (manualDelayAdjustment * 1000);
+      // Calculate target NBA timestamp: anchor + elapsed time + manual adjustment
+      // Manual adjustment SPEEDS UP progression (positive = catch up to stream faster)
+      // This accounts for your stream being ahead of where you synced
+      const targetNbaTimestamp = syncAnchor.nbaTimestamp + elapsedSinceSync + (manualDelayAdjustment * 1000);
       
       // For live games: don't go beyond the latest state we have
       const latestAvailableTimestamp = stateQueueRef.current.length > 0 
@@ -1133,11 +1133,11 @@ export default function GameViewPage() {
                     Live: Q{liveState.period} {liveState.clock} | Delay: {streamDelaySeconds.toFixed(1)}s
                   </div>
                   
-                  {/* Fine-tune delay adjustment */}
+                  {/* Stream ahead adjustment */}
                   <div className="space-y-1 pt-2 border-t border-white/10">
                     <div className="flex justify-between items-center">
-                      <span className="text-white/60">Add extra delay:</span>
-                      <span className="text-emerald-300 font-mono">+{manualDelayAdjustment.toFixed(1)}s</span>
+                      <span className="text-white/60">Stream ahead by:</span>
+                      <span className="text-emerald-300 font-mono">{manualDelayAdjustment.toFixed(1)}s</span>
                     </div>
                     <input
                       type="range"
@@ -1152,8 +1152,11 @@ export default function GameViewPage() {
                       className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-emerald-400"
                     />
                     <div className="flex justify-between text-[10px] text-white/40">
-                      <span>0s (no extra delay)</span>
-                      <span>+30s</span>
+                      <span>0s (exact sync)</span>
+                      <span>+30s ahead</span>
+                    </div>
+                    <div className="text-[10px] text-white/40 mt-1">
+                      If your stream is ahead of the time you entered, increase this to catch up
                     </div>
                   </div>
                   

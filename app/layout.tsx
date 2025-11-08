@@ -1,17 +1,22 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import Link from "next/link";
+import AuthProvider from "@/components/AuthProvider";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { SignInOut } from "@/components/SignInOut";
 
 export const metadata: Metadata = {
   title: "NBA Gesture Predictor",
   description: "Live NBA + Shooting Gesture Predictions",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const session = await getServerSession(authOptions);
   return (
     <html lang="en">
       <body className="min-h-screen bg-black text-white">
@@ -19,23 +24,32 @@ export default function RootLayout({
           <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-2 sm:px-6 lg:px-10">
             <Link
               href="/"
-              className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.35em] text-emerald-200 transition hover:border-emerald-300/60"
+              className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.65rem] font-semibold tracking-[0.35em] text-emerald-200 uppercase transition hover:border-emerald-300/60"
             >
               <span className="h-2 w-2 rounded-full bg-emerald-300" />
               NBA Gesture Predictor
             </Link>
-            <nav className="flex items-center gap-5 text-[0.6rem] font-semibold uppercase tracking-[0.35em] text-emerald-100/80">
-              <span className="hidden sm:inline text-purple-200/90">
+            <nav className="flex items-center gap-5 text-[0.6rem] font-semibold tracking-[0.35em] text-emerald-100/80 uppercase">
+              <span className="hidden text-purple-200/90 sm:inline">
                 Live Intel
               </span>
-              <span className="hidden sm:inline text-orange-200/90">
+              <span className="hidden text-orange-200/90 sm:inline">
                 Gesture Lab
               </span>
               <span className="text-emerald-200/90">Boards</span>
+              <Link
+                href="/join"
+                className="text-emerald-300 hover:text-emerald-200"
+              >
+                Join
+              </Link>
+              <SignInOut session={session} />
             </nav>
           </div>
         </header>
-        <main className="mx-auto">{children}</main>
+        <AuthProvider>
+          <main className="mx-auto">{children}</main>
+        </AuthProvider>
       </body>
     </html>
   );

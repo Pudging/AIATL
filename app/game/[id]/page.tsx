@@ -66,7 +66,12 @@ export default function GameViewPage() {
   const predictionsRef = useRef<
     Record<
       PlayerLabel,
-      { ts: number; period?: number | string | null; clock?: string; shotType?: ShotType }[]
+      {
+        ts: number;
+        period?: number | string | null;
+        clock?: string;
+        shotType?: ShotType;
+      }[]
     >
   >({
     "Left Player": [],
@@ -85,7 +90,10 @@ export default function GameViewPage() {
   const [syncedPeriod, setSyncedPeriod] = useState<number>(1);
   const [streamDelaySeconds, setStreamDelaySeconds] = useState<number>(0);
   const [manualDelayAdjustment, setManualDelayAdjustment] = useState<number>(0);
-  const [syncAnchor, setSyncAnchor] = useState<{ nbaTimestamp: number; realWorldTime: number } | null>(null);
+  const [syncAnchor, setSyncAnchor] = useState<{
+    nbaTimestamp: number;
+    realWorldTime: number;
+  } | null>(null);
   const [predictionWindowActive, setPredictionWindowActive] = useState(false);
   const [showPointsEarned, setShowPointsEarned] = useState(false);
   const [pointsEarned, setPointsEarned] = useState(0);
@@ -93,13 +101,42 @@ export default function GameViewPage() {
     null
   );
   const [playerPointsDisplay, setPlayerPointsDisplay] = useState<
-    Record<PlayerLabel, { show: boolean; points: number; basePoints: number; shotMultiplier: number; streakMultiplier: number }>
+    Record<
+      PlayerLabel,
+      {
+        show: boolean;
+        points: number;
+        basePoints: number;
+        shotMultiplier: number;
+        streakMultiplier: number;
+      }
+    >
   >({
-    "Left Player": { show: false, points: 0, basePoints: 0, shotMultiplier: 1, streakMultiplier: 1 },
-    "Right Player": { show: false, points: 0, basePoints: 0, shotMultiplier: 1, streakMultiplier: 1 },
-    "Center Player": { show: false, points: 0, basePoints: 0, shotMultiplier: 1, streakMultiplier: 1 },
+    "Left Player": {
+      show: false,
+      points: 0,
+      basePoints: 0,
+      shotMultiplier: 1,
+      streakMultiplier: 1,
+    },
+    "Right Player": {
+      show: false,
+      points: 0,
+      basePoints: 0,
+      shotMultiplier: 1,
+      streakMultiplier: 1,
+    },
+    "Center Player": {
+      show: false,
+      points: 0,
+      basePoints: 0,
+      shotMultiplier: 1,
+      streakMultiplier: 1,
+    },
   });
-  const [playerStreaks, setPlayerStreaks] = useState<Record<PlayerLabel, number>>({
+  const [playerStreaks, setPlayerStreaks] = useState<
+    Record<PlayerLabel, number>
+  >({
     "Left Player": 0,
     "Right Player": 0,
     "Center Player": 0,
@@ -115,6 +152,22 @@ export default function GameViewPage() {
   const [delayedState, setDelayedState] = useState<ParsedGameState | null>(
     null
   );
+  const [gameSessionId, setGameSessionId] = useState<string | null>(null);
+  const [joinCode, setJoinCode] = useState<string | null>(null);
+  const [playersBySlot, setPlayersBySlot] = useState<
+    Record<
+      number,
+      { id: string; name?: string | null; image?: string | null } | null
+    >
+  >({ 0: null, 1: null, 2: null });
+  const [webcamReady, setWebcamReady] = useState(false);
+  const assignedLabels = useMemo<PlayerLabel[]>(() => {
+    const labels: PlayerLabel[] = [];
+    if (playersBySlot[0]) labels.push("Left Player");
+    if (playersBySlot[1]) labels.push("Center Player");
+    if (playersBySlot[2]) labels.push("Right Player");
+    return labels.length > 0 ? labels : activeLabels;
+  }, [playersBySlot, activeLabels]);
   const stateQueueRef = useRef<{ state: ParsedGameState; timestamp: number }[]>(
     []
   );
@@ -129,20 +182,22 @@ export default function GameViewPage() {
   // Helper: Convert game clock (MM:SS or M:SS or PT format) to seconds
   const clockToSeconds = (clock: string): number => {
     if (!clock) return 0;
-    
+
     // Handle PT format (e.g., "PT05M23.00S")
     if (clock.startsWith("PT")) {
       const minutesMatch = clock.match(/(\d+)M/);
       const secondsMatch = clock.match(/(\d+(?:\.\d+)?)S/);
-      const minutes = minutesMatch ? parseInt(minutesMatch[1], 10) : 0;
-      const seconds = secondsMatch ? parseFloat(secondsMatch[1]) : 0;
+      const minutes = parseInt(minutesMatch?.[1] ?? "0", 10);
+      const seconds = Math.floor(parseFloat(secondsMatch?.[1] ?? "0"));
       return minutes * 60 + Math.floor(seconds);
     }
-    
+
     // Handle MM:SS format
-    const parts = clock.split(":").map((p) => parseInt(p, 10));
+    const parts = clock.split(":");
     if (parts.length === 2) {
-      return parts[0] * 60 + parts[1];
+      const mm = parseInt(parts[0] ?? "0", 10);
+      const ss = parseInt(parts[1] ?? "0", 10);
+      return mm * 60 + ss;
     }
     return 0;
   };
@@ -150,73 +205,89 @@ export default function GameViewPage() {
   // Helper: Format clock for display (converts PT format to MM:SS)
   const formatClock = (clock: string): string => {
     if (!clock) return "--:--";
-    
+
     // If already in MM:SS format, return as is
     if (!clock.startsWith("PT")) return clock;
-    
+
     // Parse PT format
     const minutesMatch = clock.match(/(\d+)M/);
     const secondsMatch = clock.match(/(\d+(?:\.\d+)?)S/);
-    const minutes = minutesMatch ? parseInt(minutesMatch[1], 10) : 0;
-    const seconds = secondsMatch ? Math.floor(parseFloat(secondsMatch[1])) : 0;
-    
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    const minutes = minutesMatch ? parseInt(minutesMatch[1] ?? "0", 10) : 0;
+    const seconds = secondsMatch
+      ? Math.floor(parseFloat(secondsMatch[1] ?? "0"))
+      : 0;
+
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   };
 
   // Helper: Find state by game clock and period (for initial sync)
   // Returns the state and calculates delay in seconds
-  const findStateByGameClock = (targetClock: string, targetPeriod?: number): { state: ParsedGameState; delaySeconds: number } | null => {
+  const findStateByGameClock = (
+    targetClock: string,
+    targetPeriod?: number
+  ): { state: ParsedGameState; delaySeconds: number } | null => {
     if (!targetClock || stateQueueRef.current.length === 0) return null;
-    
+
     // Use provided period or fall back to current period
-    const latestState = stateQueueRef.current[stateQueueRef.current.length - 1].state;
+    const latestState =
+      stateQueueRef.current[stateQueueRef.current.length - 1]!.state;
     const searchPeriod = targetPeriod ?? latestState.period;
-    
+
     const targetSeconds = clockToSeconds(targetClock);
-    let closestMatch: { state: ParsedGameState; timestamp: number; diff: number } | null = null;
-    
+    let closestMatch: {
+      state: ParsedGameState;
+      timestamp: number;
+      diff: number;
+    } | null = null;
+
     // Only look at states from the specified period
     // Find the LAST (most recent) state that matches the clock time
     for (const item of stateQueueRef.current) {
       // Normalize period comparison (handle both number and string)
-      const itemPeriod = typeof item.state.period === 'number' 
-        ? item.state.period 
-        : parseInt(String(item.state.period || '1'), 10);
-      
+      const itemPeriod =
+        typeof item.state.period === "number"
+          ? item.state.period
+          : parseInt(String(item.state.period || "1"), 10);
+
       if (itemPeriod !== searchPeriod) continue;
-      
+
       const stateClock = item.state.clock || "";
       const stateSeconds = clockToSeconds(stateClock);
       const diff = Math.abs(stateSeconds - targetSeconds);
-      
+
       if (!closestMatch || diff < closestMatch.diff) {
-        closestMatch = { 
-          state: item.state, 
+        closestMatch = {
+          state: item.state,
           timestamp: item.timestamp,
-          diff 
+          diff,
         };
       }
     }
-    
+
     if (!closestMatch) return null;
-    
+
     // Calculate delay: how many seconds behind live are we?
-    const latestTimestamp = stateQueueRef.current[stateQueueRef.current.length - 1].timestamp;
+    const latestTimestamp =
+      stateQueueRef.current[stateQueueRef.current.length - 1]!.timestamp;
     const delaySeconds = (latestTimestamp - closestMatch.timestamp) / 1000;
-    
+
     return { state: closestMatch.state, delaySeconds };
   };
 
   // Helper: Find state by timestamp (for tracking with delay)
-  const findStateByTimestamp = (targetTimestamp: number): ParsedGameState | null => {
+  const findStateByTimestamp = (
+    targetTimestamp: number
+  ): ParsedGameState | null => {
     if (stateQueueRef.current.length === 0) return null;
-    
+
     // Find the state that is closest to but NOT AFTER the target timestamp
     // This ensures we don't jump ahead to future states
     let bestState: { state: ParsedGameState; timestamp: number; index: number } | null = null;
     
     for (let i = 0; i < stateQueueRef.current.length; i++) {
       const item = stateQueueRef.current[i];
+      if (!item) continue;
+      
       // Only consider states at or before the target
       if (item.timestamp <= targetTimestamp) {
         if (!bestState || item.timestamp > bestState.timestamp) {
@@ -235,9 +306,9 @@ export default function GameViewPage() {
         }
       }
     }
-    
+
     // If no state found before target, return the first state
-    return bestState ? bestState.state : stateQueueRef.current[0].state;
+    return bestState ? bestState.state : stateQueueRef.current[0]!.state;
   };
 
   // Debug logging
@@ -250,6 +321,43 @@ export default function GameViewPage() {
     setIsMounted(true);
   }, []);
 
+  // Fetch or create game session for join code and players
+  useEffect(() => {
+    let timer: any;
+    let cancelled = false;
+    async function fetchSession() {
+      try {
+        const res = await fetch(`/api/game-session/${id}`, {
+          cache: "no-store",
+        });
+        const data = await res.json();
+        if (cancelled) return;
+        if (res.ok) {
+          setGameSessionId(data.id ?? null);
+          setJoinCode(data.joinCode ?? null);
+          const next: Record<
+            number,
+            { id: string; name?: string; image?: string } | null
+          > = { 0: null, 1: null, 2: null };
+          (data.players ?? []).forEach((p: any) => {
+            next[p.slot] = {
+              id: p.user.id,
+              name: p.user.name,
+              image: p.user.image,
+            };
+          });
+          setPlayersBySlot(next);
+        }
+      } catch {}
+    }
+    fetchSession();
+    timer = setInterval(fetchSession, 3000);
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
+  }, [id]);
+
   // Update current time
   useEffect(() => {
     if (!isMounted) return;
@@ -261,79 +369,132 @@ export default function GameViewPage() {
 
   useEffect(() => {
     let active = true;
-    const isTest002 = id?.toUpperCase() === 'TEST002';
-    
+    const isTest002 = id?.toUpperCase() === "TEST002";
+
     async function loadAll() {
       // For TEST002, load all historical states at once
       try {
-        console.log('[TEST002] Loading all historical states...');
-        const res = await fetch(`/api/games/${id}?loadAll=true`, { cache: "no-store" });
+        console.log("[TEST002] Loading all historical states...");
+        const res = await fetch(`/api/games/${id}?loadAll=true`, {
+          cache: "no-store",
+        });
         const data = await res.json();
         if (!active) return;
-        
+
         // Clear existing queue to avoid duplicates
         stateQueueRef.current = [];
-        
+
         if (data?.states && Array.isArray(data.states)) {
           const now = Date.now();
           const firstTimeActual = data.states[0]?.timeActual;
-          const lastTimeActual = data.states[data.states.length - 1]?.timeActual;
-          
-          console.log(`[TEST002] Raw data - first timeActual: ${firstTimeActual}`);
-          console.log(`[TEST002] Raw data - last timeActual: ${lastTimeActual}`);
-          console.log(`[TEST002] Current time (now): ${new Date(now).toLocaleTimeString()}`);
-          
+          const lastTimeActual =
+            data.states[data.states.length - 1]?.timeActual;
+
+          console.log(
+            `[TEST002] Raw data - first timeActual: ${firstTimeActual}`
+          );
+          console.log(
+            `[TEST002] Raw data - last timeActual: ${lastTimeActual}`
+          );
+          console.log(
+            `[TEST002] Current time (now): ${new Date(
+              now
+            ).toLocaleTimeString()}`
+          );
+
           if (firstTimeActual && lastTimeActual) {
             const firstTime = new Date(firstTimeActual).getTime();
             const lastTime = new Date(lastTimeActual).getTime();
             const gameDuration = lastTime - firstTime;
-            
-            console.log(`[TEST002] firstTime parsed: ${new Date(firstTime).toLocaleTimeString()}`);
-            console.log(`[TEST002] lastTime parsed: ${new Date(lastTime).toLocaleTimeString()}`);
-            
+
+            console.log(
+              `[TEST002] firstTime parsed: ${new Date(
+                firstTime
+              ).toLocaleTimeString()}`
+            );
+            console.log(
+              `[TEST002] lastTime parsed: ${new Date(
+                lastTime
+              ).toLocaleTimeString()}`
+            );
+
             // Map NBA timestamps to a timeline starting from NOW
             // Each state's timestamp = now + (time since game start)
             data.states.forEach((item: any, index: number) => {
               const actionTime = new Date(item.timeActual).getTime();
               const offsetFromStart = actionTime - firstTime;
               const timestamp = now + offsetFromStart;
-              
+
               // Debug first and last
               if (index === 0 || index === data.states.length - 1) {
-                console.log(`[TEST002] State ${index}: actionTime=${new Date(actionTime).toLocaleTimeString()}, offset=${(offsetFromStart/1000).toFixed(1)}s, mapped=${new Date(timestamp).toLocaleTimeString()}`);
+                console.log(
+                  `[TEST002] State ${index}: actionTime=${new Date(
+                    actionTime
+                  ).toLocaleTimeString()}, offset=${(
+                    offsetFromStart / 1000
+                  ).toFixed(1)}s, mapped=${new Date(
+                    timestamp
+                  ).toLocaleTimeString()}`
+                );
               }
-              
+
               stateQueueRef.current.push({ state: item.state, timestamp });
             });
-            
+
             // Set initial sync anchor to start playing from the beginning
             setSyncAnchor({
               nbaTimestamp: now, // First state starts "now"
-              realWorldTime: now
+              realWorldTime: now,
             });
-            
-            console.log(`[TEST002] Loaded ${data.states.length} states using REAL NBA timestamps`);
-            console.log(`[TEST002] Game duration: ${(gameDuration/1000/60).toFixed(1)} minutes`);
-            console.log(`[TEST002] First state at: ${new Date(now).toLocaleTimeString()}`);
-            console.log(`[TEST002] Last state at: ${new Date(now + gameDuration).toLocaleTimeString()}`);
-            console.log(`[TEST002] Queue first timestamp: ${new Date(stateQueueRef.current[0].timestamp).toLocaleTimeString()}`);
-            console.log(`[TEST002] Queue last timestamp: ${new Date(stateQueueRef.current[stateQueueRef.current.length - 1].timestamp).toLocaleTimeString()}`);
+
+            console.log(
+              `[TEST002] Loaded ${data.states.length} states using REAL NBA timestamps`
+            );
+            console.log(
+              `[TEST002] Game duration: ${(gameDuration / 1000 / 60).toFixed(
+                1
+              )} minutes`
+            );
+            console.log(
+              `[TEST002] First state at: ${new Date(now).toLocaleTimeString()}`
+            );
+            console.log(
+              `[TEST002] Last state at: ${new Date(
+                now + gameDuration
+              ).toLocaleTimeString()}`
+            );
+            if (stateQueueRef.current.length > 0) {
+              console.log(
+                `[TEST002] Queue first timestamp: ${new Date(
+                  stateQueueRef.current[0]!.timestamp
+                ).toLocaleTimeString()}`
+              );
+              const lastItem =
+                stateQueueRef.current[stateQueueRef.current.length - 1]!;
+              console.log(
+                `[TEST002] Queue last timestamp: ${new Date(
+                  lastItem.timestamp
+                ).toLocaleTimeString()}`
+              );
+            }
             console.log(`[TEST002] Auto-playing from start...`);
           } else {
-            console.warn('[TEST002] No timeActual found, using fallback spacing');
+            console.warn(
+              "[TEST002] No timeActual found, using fallback spacing"
+            );
             const baseTime = now;
             const timePerState = 900000 / data.states.length;
             data.states.forEach((item: any, index: number) => {
               const timestamp = baseTime + (index * timePerState);
               stateQueueRef.current.push({ state: item.state, timestamp });
             });
-            
+
             setSyncAnchor({
               nbaTimestamp: now,
-              realWorldTime: now
+              realWorldTime: now,
             });
           }
-          
+
           // Set the first state as the starting point
           const firstState = data.states[0];
           setLiveState(firstState.state || firstState);
@@ -341,11 +502,11 @@ export default function GameViewPage() {
         }
         setError(null);
       } catch (err) {
-        console.error('[TEST002] Error loading states:', err);
+        console.error("[TEST002] Error loading states:", err);
         if (active) setError("Failed to load game data");
       }
     }
-    
+
     async function load() {
       try {
         const url = isTestGame
@@ -387,7 +548,7 @@ export default function GameViewPage() {
         if (active) setError("Failed to fetch live update");
       }
     }
-    
+
     // For TEST002, load all states once
     if (isTest002) {
       loadAll();
@@ -400,7 +561,7 @@ export default function GameViewPage() {
         if (timer) clearInterval(timer);
       };
     }
-    
+
     return () => {
       active = false;
     };
@@ -413,8 +574,14 @@ export default function GameViewPage() {
       if (!syncAnchor) {
         // If no sync, use most recent state
         if (stateQueueRef.current.length > 0) {
-          const latestState = stateQueueRef.current[stateQueueRef.current.length - 1].state;
-          if (!delayedState || JSON.stringify(latestState) !== JSON.stringify(delayedState)) {
+          const q = stateQueueRef.current;
+          const latestItem = q[q.length - 1];
+          if (!latestItem) return;
+          const latestState = latestItem.state;
+          if (
+            !delayedState ||
+            JSON.stringify(latestState) !== JSON.stringify(delayedState)
+          ) {
             setDelayedState(latestState);
             setState(latestState);
             setDelayedUpdateCount((prev) => prev + 1);
@@ -426,18 +593,26 @@ export default function GameViewPage() {
       // Calculate how much real-world time has passed since sync
       const now = Date.now();
       const elapsedSinceSync = now - syncAnchor.realWorldTime;
-      
+
       // Calculate target NBA timestamp: anchor + elapsed time + manual adjustment
       // Manual adjustment SPEEDS UP progression (positive = catch up to stream faster)
       // This accounts for your stream being ahead of where you synced
-      const targetNbaTimestamp = syncAnchor.nbaTimestamp + elapsedSinceSync + (manualDelayAdjustment * 1000);
-      
+      const targetNbaTimestamp =
+        syncAnchor.nbaTimestamp +
+        elapsedSinceSync +
+        manualDelayAdjustment * 1000;
+
       // For live games: don't go beyond the latest state we have
-      const latestAvailableTimestamp = stateQueueRef.current.length > 0 
-        ? stateQueueRef.current[stateQueueRef.current.length - 1].timestamp 
-        : now;
-      const clampedTarget = Math.min(targetNbaTimestamp, latestAvailableTimestamp);
-      
+      const latestAvailableTimestamp =
+        stateQueueRef.current.length > 0
+          ? stateQueueRef.current[stateQueueRef.current.length - 1]
+              ?.timestamp ?? now
+          : now;
+      const clampedTarget = Math.min(
+        targetNbaTimestamp,
+        latestAvailableTimestamp
+      );
+
       // Find state closest to target NBA timestamp
       const matchedState = findStateByTimestamp(clampedTarget);
       
@@ -450,13 +625,21 @@ export default function GameViewPage() {
         setDelayedState(matchedState);
         setState(matchedState);
         setDelayedUpdateCount((prev) => prev + 1);
-        
+
         // Detect new shots for prediction system
         detectNewShot(matchedState);
-        
+
         const isClamped = clampedTarget !== targetNbaTimestamp;
         console.log(
-          `[PROGRESS] Q${matchedState.period} ${formatClock(matchedState.clock || '')} | Elapsed: ${(elapsedSinceSync/1000).toFixed(1)}s | Anchor: ${new Date(syncAnchor.nbaTimestamp).toLocaleTimeString()} | Target: ${new Date(clampedTarget).toLocaleTimeString()}${isClamped ? ' (clamped)' : ''}`
+          `[PROGRESS] Q${matchedState.period} ${formatClock(
+            matchedState.clock || ""
+          )} | Elapsed: ${(elapsedSinceSync / 1000).toFixed(
+            1
+          )}s | Anchor: ${new Date(
+            syncAnchor.nbaTimestamp
+          ).toLocaleTimeString()} | Target: ${new Date(
+            clampedTarget
+          ).toLocaleTimeString()}${isClamped ? " (clamped)" : ""}`
         );
       }
     }, 100);
@@ -547,9 +730,9 @@ export default function GameViewPage() {
         const labelsWithPrediction = PLAYER_LABELS.filter(
           (label) => (predictionsRef.current[label]?.length ?? 0) > 0
         );
-        
+
         const baseDelta = isMade ? POINT_DELTA : -POINT_DELTA;
-        
+
         // Map NBA shot type to our gesture types
         const actualShotType = lastShot.shotType?.toLowerCase();
         let actualGestureType: ShotType = "normal";
@@ -558,31 +741,46 @@ export default function GameViewPage() {
         } else if (actualShotType?.includes("layup")) {
           actualGestureType = "layup";
         }
-        
+
         if (labelsWithPrediction.length > 0) {
           // Calculate deltas for each player once with streaks
-          const playerDeltas: Record<PlayerLabel, number> = {} as Record<PlayerLabel, number>;
-          const playerDisplayInfo: Record<PlayerLabel, { basePoints: number; shotMultiplier: number; streakMultiplier: number; finalPoints: number }> = {} as any;
-          
+          const playerDeltas: Record<PlayerLabel, number> = {} as Record<
+            PlayerLabel,
+            number
+          >;
+          const playerDisplayInfo: Record<
+            PlayerLabel,
+            {
+              basePoints: number;
+              shotMultiplier: number;
+              streakMultiplier: number;
+              finalPoints: number;
+            }
+          > = {} as any;
+
           labelsWithPrediction.forEach((label) => {
             const playerPredictions = predictionsRef.current[label] ?? [];
-            const lastPrediction = playerPredictions[playerPredictions.length - 1];
+            const lastPrediction =
+              playerPredictions[playerPredictions.length - 1];
             const predictedShotType = lastPrediction?.shotType;
-            
+
             // Apply 2x multiplier if shot type matches
-            const shotMultiplier = predictedShotType === actualGestureType ? 2 : 1;
-            
+            const shotMultiplier =
+              predictedShotType === actualGestureType ? 2 : 1;
+
             // Update streak: increment if made, reset if missed
             const currentStreak = playerStreaks[label] ?? 0;
             const newStreak = isMade ? currentStreak + 1 : 0;
-            
+
             // Streak multiplier: 1.2x for each correct prediction AFTER the first (applies after shot multiplier)
             // First correct = 1x, second = 1.2x, third = 1.4x, etc.
-            const streakMultiplier = 1 + (Math.max(0, newStreak - 1) * 0.2);
-            
+            const streakMultiplier = 1 + Math.max(0, newStreak - 1) * 0.2;
+
             // Calculate final delta: base * shotMultiplier * streakMultiplier
-            const delta = Math.round(baseDelta * shotMultiplier * streakMultiplier);
-            
+            const delta = Math.round(
+              baseDelta * shotMultiplier * streakMultiplier
+            );
+
             playerDeltas[label] = delta;
             playerDisplayInfo[label] = {
               basePoints: baseDelta,
@@ -590,10 +788,14 @@ export default function GameViewPage() {
               streakMultiplier,
               finalPoints: delta,
             };
-            
-            console.log(`[POINTS] ${label}: predicted=${predictedShotType}, actual=${actualGestureType}, shot=${shotMultiplier}x, streak=${newStreak} (${streakMultiplier.toFixed(1)}x), delta=${delta}`);
+
+            console.log(
+              `[POINTS] ${label}: predicted=${predictedShotType}, actual=${actualGestureType}, shot=${shotMultiplier}x, streak=${newStreak} (${streakMultiplier.toFixed(
+                1
+              )}x), delta=${delta}`
+            );
           });
-          
+
           // Update streaks
           setPlayerStreaks((prev) => {
             const next = { ...prev };
@@ -603,7 +805,7 @@ export default function GameViewPage() {
             });
             return next;
           });
-          
+
           // Update points
           setPointsByPlayer((prev) => {
             const next = { ...prev };
@@ -618,8 +820,8 @@ export default function GameViewPage() {
             const next = { ...prev };
             labelsWithPrediction.forEach((label) => {
               const info = playerDisplayInfo[label];
-              next[label] = { 
-                show: true, 
+              next[label] = {
+                show: true,
                 points: info.finalPoints,
                 basePoints: info.basePoints,
                 shotMultiplier: info.shotMultiplier,
@@ -632,21 +834,78 @@ export default function GameViewPage() {
           // Hide overlays after 2.5 seconds
           setTimeout(() => {
             setPlayerPointsDisplay({
-              "Left Player": { show: false, points: 0, basePoints: 0, shotMultiplier: 1, streakMultiplier: 1 },
-              "Right Player": { show: false, points: 0, basePoints: 0, shotMultiplier: 1, streakMultiplier: 1 },
-              "Center Player": { show: false, points: 0, basePoints: 0, shotMultiplier: 1, streakMultiplier: 1 },
+              "Left Player": {
+                show: false,
+                points: 0,
+                basePoints: 0,
+                shotMultiplier: 1,
+                streakMultiplier: 1,
+              },
+              "Right Player": {
+                show: false,
+                points: 0,
+                basePoints: 0,
+                shotMultiplier: 1,
+                streakMultiplier: 1,
+              },
+              "Center Player": {
+                show: false,
+                points: 0,
+                basePoints: 0,
+                shotMultiplier: 1,
+                streakMultiplier: 1,
+              },
             });
           }, 2500);
-          
+
           // Keep old single overlay for backwards compatibility (can remove later)
           setPointsEarned(baseDelta);
           setPointsEarnedLabel(
             labelsWithPrediction.length === 1
-              ? labelsWithPrediction[0]
+              ? labelsWithPrediction[0] ?? "Player"
               : "Multiple Players"
           );
           setShowPointsEarned(true);
           setTimeout(() => setShowPointsEarned(false), 3000);
+
+          // Persist shots to DB
+          try {
+            const labelToSlot = (lb: PlayerLabel) =>
+              lb === "Left Player" ? 0 : lb === "Center Player" ? 1 : 2;
+            const shotsPayload = labelsWithPrediction
+              .map((lb) => {
+                const slot = labelToSlot(lb);
+                const usr = playersBySlot[slot];
+                if (!usr?.id) return null;
+                const playerPredictions = predictionsRef.current[lb] ?? [];
+                const lastPrediction =
+                  playerPredictions[playerPredictions.length - 1];
+                const predictedShotType = lastPrediction?.shotType ?? null;
+                return {
+                  playerUserId: usr.id,
+                  gameId: id,
+                  gameSessionId,
+                  made: !!isMade,
+                  points: lastShot.points ?? 0,
+                  shotTypeActual: actualGestureType ?? null,
+                  shotTypePredicted: predictedShotType ?? null,
+                  matchedGesture:
+                    predictedShotType && actualGestureType
+                      ? predictedShotType === actualGestureType
+                      : null,
+                  period: String(state?.period ?? ""),
+                  clock: state?.clock ?? null,
+                };
+              })
+              .filter(Boolean);
+            if ((shotsPayload as any[]).length > 0) {
+              fetch("/api/shots", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ shots: shotsPayload }),
+              }).catch(() => {});
+            }
+          } catch {}
         }
         // Show lane points for all active labels (predicted => delta with multiplier, else 0)
         const laneMap: Record<PlayerLabel, number | null> = {
@@ -654,17 +913,21 @@ export default function GameViewPage() {
           "Right Player": null,
           "Center Player": null,
         };
-        
+
         // Calculate deltas for lane display
-        const laneDeltas: Record<PlayerLabel, number> = {} as Record<PlayerLabel, number>;
+        const laneDeltas: Record<PlayerLabel, number> = {} as Record<
+          PlayerLabel,
+          number
+        >;
         labelsWithPrediction.forEach((label) => {
           const playerPredictions = predictionsRef.current[label] ?? [];
-          const lastPrediction = playerPredictions[playerPredictions.length - 1];
+          const lastPrediction =
+            playerPredictions[playerPredictions.length - 1];
           const predictedShotType = lastPrediction?.shotType;
           const multiplier = predictedShotType === actualGestureType ? 2 : 1;
           laneDeltas[label] = baseDelta * multiplier;
         });
-        
+
         activeLabels.forEach((label) => {
           if (labelsWithPrediction.includes(label)) {
             laneMap[label] = laneDeltas[label];
@@ -789,9 +1052,9 @@ export default function GameViewPage() {
           .padStart(3, "0")}</div>
 					</div>
 					<div class="card">
-						<div class="label">Quarter ${liveState.period ?? "-"} • ${
-          formatClock(liveState.clock || '')
-        }</div>
+						<div class="label">Quarter ${liveState.period ?? "-"} • ${formatClock(
+          liveState.clock || ""
+        )}</div>
 						<div class="grid">
 							<div>
 								<div class="label">${liveState.awayTeam ?? "Away"}</div>
@@ -1016,7 +1279,10 @@ export default function GameViewPage() {
                     Dashboard: {isMounted ? currentTime : "--:--:--"}
                   </div>
                   <div className="text-purple-200 font-semibold">
-                    Update #{delayedUpdateCount} {streamGameClock ? `(Stream: ${streamGameClock})` : "(Live)"}
+                    Update #{delayedUpdateCount}{" "}
+                    {streamGameClock
+                      ? `(Stream: ${streamGameClock})`
+                      : "(Live)"}
                   </div>
                 </div>
                 <button
@@ -1071,9 +1337,7 @@ export default function GameViewPage() {
             {/* Stream Clock Sync */}
             <div className="rounded-lg border border-white/10 bg-black/30 p-3">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs opacity-70">
-                  Stream Game Clock
-                </span>
+                <span className="text-xs opacity-70">Stream Game Clock</span>
                 <span className="text-sm font-bold">
                   {streamGameClock || "Not Set"}
                 </span>
@@ -1081,7 +1345,9 @@ export default function GameViewPage() {
               <div className="flex gap-2">
                 <select
                   value={streamPeriodInput}
-                  onChange={(e) => setStreamPeriodInput(parseInt(e.target.value))}
+                  onChange={(e) =>
+                    setStreamPeriodInput(parseInt(e.target.value))
+                  }
                   className="px-3 py-2 bg-black/50 border border-white/20 rounded text-white text-sm focus:outline-none focus:border-emerald-400"
                 >
                   <option value="1">Q1</option>
@@ -1100,37 +1366,71 @@ export default function GameViewPage() {
                   onClick={() => {
                     if (streamClockInput) {
                       // Find the state matching the entered clock and period
-                      const match = findStateByGameClock(streamClockInput, streamPeriodInput);
+                      const match = findStateByGameClock(
+                        streamClockInput,
+                        streamPeriodInput
+                      );
                       if (match) {
                         setStreamGameClock(streamClockInput);
                         setSyncedPeriod(streamPeriodInput);
-                        
+
                         // Set sync anchor: the matched state's timestamp and current real-world time
-                        const matchedItem = stateQueueRef.current.find(item => item.state === match.state);
+                        const matchedItem = stateQueueRef.current.find(
+                          (item) => item.state === match.state
+                        );
                         if (matchedItem) {
                           const now = Date.now();
                           setSyncAnchor({
                             nbaTimestamp: matchedItem.timestamp,
-                            realWorldTime: now
+                            realWorldTime: now,
                           });
-                          
+
                           // Calculate actual delay for display purposes
-                          const latestTimestamp = stateQueueRef.current[stateQueueRef.current.length - 1].timestamp;
-                          const actualDelay = (latestTimestamp - matchedItem.timestamp) / 1000;
+                          const last =
+                            stateQueueRef.current[
+                              stateQueueRef.current.length - 1
+                            ];
+                          const latestTimestamp = last
+                            ? last.timestamp
+                            : matchedItem.timestamp;
+                          const actualDelay =
+                            (latestTimestamp - matchedItem.timestamp) / 1000;
                           setStreamDelaySeconds(actualDelay);
-                          
+
                           console.log(`[SYNC] ===== SYNC DEBUG =====`);
-                          console.log(`[SYNC] Target: Q${streamPeriodInput} ${streamClockInput}`);
-                          console.log(`[SYNC] Matched state: Q${match.state.period} ${formatClock(match.state.clock || '')}`);
-                          console.log(`[SYNC] Matched timestamp: ${new Date(matchedItem.timestamp).toLocaleTimeString()}`);
-                          console.log(`[SYNC] Latest timestamp: ${new Date(latestTimestamp).toLocaleTimeString()}`);
-                          console.log(`[SYNC] Delay from end: ${actualDelay.toFixed(1)}s`);
-                          console.log(`[SYNC] Sync anchor set - will progress from Q${streamPeriodInput} ${streamClockInput}`);
-                          console.log(`[SYNC] As time passes, game will advance relative to your PC time`);
+                          console.log(
+                            `[SYNC] Target: Q${streamPeriodInput} ${streamClockInput}`
+                          );
+                          console.log(
+                            `[SYNC] Matched state: Q${
+                              match.state.period
+                            } ${formatClock(match.state.clock || "")}`
+                          );
+                          console.log(
+                            `[SYNC] Matched timestamp: ${new Date(
+                              matchedItem.timestamp
+                            ).toLocaleTimeString()}`
+                          );
+                          console.log(
+                            `[SYNC] Latest timestamp: ${new Date(
+                              latestTimestamp
+                            ).toLocaleTimeString()}`
+                          );
+                          console.log(
+                            `[SYNC] Delay from end: ${actualDelay.toFixed(1)}s`
+                          );
+                          console.log(
+                            `[SYNC] Sync anchor set - will progress from Q${streamPeriodInput} ${streamClockInput}`
+                          );
+                          console.log(
+                            `[SYNC] As time passes, game will advance relative to your PC time`
+                          );
                           console.log(`[SYNC] ========================`);
                         }
                       } else {
-                        console.warn(`[SYNC] No match found for Q${streamPeriodInput} ${streamClockInput}`);
+                        console.warn(
+                          `[SYNC] No match found for Q${streamPeriodInput} ${streamClockInput}`
+                        );
                       }
                     }
                   }}
@@ -1140,49 +1440,57 @@ export default function GameViewPage() {
                 </button>
               </div>
               <div className="text-xs opacity-60 mt-2">
-                Enter the game clock showing on your stream (e.g., "4:30" or "2:15")
+                Enter the game clock showing on your stream (e.g., "4:30" or
+                "2:15")
               </div>
-              {streamGameClock && liveState?.clock && streamDelaySeconds > 0 && (
-                <div className="text-xs mt-2 space-y-2">
-                  <div className="text-emerald-300">
-                    ✓ Synced to Q{syncedPeriod} {streamGameClock}
-                  </div>
-                  <div className="text-white/60">
-                    Live: Q{liveState.period} {liveState.clock} | Delay: {streamDelaySeconds.toFixed(1)}s
-                  </div>
-                  
-                  {/* Stream ahead adjustment */}
-                  <div className="space-y-1 pt-2 border-t border-white/10">
-                    <div className="flex justify-between items-center">
-                      <span className="text-white/60">Stream ahead by:</span>
-                      <span className="text-emerald-300 font-mono">{manualDelayAdjustment.toFixed(1)}s</span>
+              {streamGameClock &&
+                liveState?.clock &&
+                streamDelaySeconds > 0 && (
+                  <div className="text-xs mt-2 space-y-2">
+                    <div className="text-emerald-300">
+                      ✓ Synced to Q{syncedPeriod} {streamGameClock}
                     </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="30"
-                      step="0.5"
-                      value={manualDelayAdjustment}
-                      onChange={(e) => {
-                        const adjustment = parseFloat(e.target.value);
-                        setManualDelayAdjustment(adjustment);
-                      }}
-                      className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-emerald-400"
-                    />
-                    <div className="flex justify-between text-[10px] text-white/40">
-                      <span>0s (exact sync)</span>
-                      <span>+30s ahead</span>
+                    <div className="text-white/60">
+                      Live: Q{liveState.period} {liveState.clock} | Delay:{" "}
+                      {streamDelaySeconds.toFixed(1)}s
                     </div>
-                    <div className="text-[10px] text-white/40 mt-1">
-                      If your stream is ahead of the time you entered, increase this to catch up
+
+                    {/* Stream ahead adjustment */}
+                    <div className="space-y-1 pt-2 border-t border-white/10">
+                      <div className="flex justify-between items-center">
+                        <span className="text-white/60">Stream ahead by:</span>
+                        <span className="text-emerald-300 font-mono">
+                          {manualDelayAdjustment.toFixed(1)}s
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="30"
+                        step="0.5"
+                        value={manualDelayAdjustment}
+                        onChange={(e) => {
+                          const adjustment = parseFloat(e.target.value);
+                          setManualDelayAdjustment(adjustment);
+                        }}
+                        className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-emerald-400"
+                      />
+                      <div className="flex justify-between text-[10px] text-white/40">
+                        <span>0s (exact sync)</span>
+                        <span>+30s ahead</span>
+                      </div>
+                      <div className="text-[10px] text-white/40 mt-1">
+                        If your stream is ahead of the time you entered,
+                        increase this to catch up
+                      </div>
+                    </div>
+
+                    <div className="text-white/40 text-[10px]">
+                      Dashboard auto-tracks behind live using real NBA
+                      timestamps
                     </div>
                   </div>
-                  
-                  <div className="text-white/40 text-[10px]">
-                    Dashboard auto-tracks behind live using real NBA timestamps
-                  </div>
-                </div>
-              )}
+                )}
             </div>
 
             {/* Game Clock & Quarter */}
@@ -1191,7 +1499,7 @@ export default function GameViewPage() {
                 {state?.period ? `Quarter ${state.period}` : "Game Time"}
               </div>
               <div className="text-2xl font-bold font-mono text-emerald-300">
-                {formatClock(state?.clock || '')}
+                {formatClock(state?.clock || "")}
               </div>
             </div>
 
@@ -1482,14 +1790,43 @@ export default function GameViewPage() {
 
           {/* Webcam + Gesture Detector */}
           <div className="relative rounded-[36px] border border-white/10 bg-black/45 p-4 lg:p-6 shadow-lg shadow-black/50">
+            {/* Prominent Join Code above webcam */}
+            {joinCode ? (
+              <div className="mb-3">
+                <div className="w-full rounded-2xl border border-emerald-400/40 bg-gradient-to-r from-emerald-500/20 via-emerald-400/10 to-purple-500/20 px-4 py-3 text-center">
+                  <div className="text-[10px] uppercase tracking-[0.4em] text-emerald-200 mb-1">
+                    Join on phone: /join
+                  </div>
+                  <div className="font-black text-2xl sm:text-3xl md:text-4xl tracking-[0.2em] text-white">
+                    {joinCode}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            {/* Webcam status below join code, above webcam */}
+            <div className="mb-2 text-center">
+              <div className="inline-block rounded-full bg-white/10 px-4 py-1 text-xs text-white">
+                {webcamReady
+                  ? "Webcam Ready · 2 arms=shot | 1 arm=layup | hand on head=dunk"
+                  : "Initializing webcam..."}
+              </div>
+            </div>
             <WebcamGestureDetector
               debug
+              activeLabelsOverride={assignedLabels}
+              hideReadyBanner
+              onReadyChange={(r) => setWebcamReady(r)}
+              displayNames={{
+                "Left Player": playersBySlot[0]?.name ?? undefined,
+                "Center Player": playersBySlot[1]?.name ?? undefined,
+                "Right Player": playersBySlot[2]?.name ?? undefined,
+              }}
               extraContent={
                 <div className="flex flex-wrap items-stretch justify-center gap-2 md:gap-3 w-full max-w-7xl mx-auto px-2">
-                  {activeLabels.map((label) => {
+                  {assignedLabels.map((label) => {
                     const points = pointsByPlayer[label] ?? 0;
                     const digitCount = points.toLocaleString().length;
-                    const playerCount = activeLabels.length;
+                    const playerCount = assignedLabels.length;
 
                     // Dynamic text size based on digit count AND player count
                     const getTextSize = () => {
@@ -1544,7 +1881,11 @@ export default function GameViewPage() {
                           className="text-[10px] uppercase tracking-wider font-semibold mb-1 whitespace-nowrap"
                           style={{ color: LABEL_COLORS[label] }}
                         >
-                          {label}
+                          {label === "Left Player"
+                            ? playersBySlot[0]?.name ?? label
+                            : label === "Center Player"
+                            ? playersBySlot[1]?.name ?? label
+                            : playersBySlot[2]?.name ?? label}
                         </div>
                         <motion.div
                           className={`${getTextSize()} font-extrabold text-white leading-none tabular-nums`}
@@ -1564,6 +1905,61 @@ export default function GameViewPage() {
                         >
                           {points.toLocaleString()}
                         </motion.div>
+                        <div className="mt-1">
+                          {((label === "Left Player" && playersBySlot[0]) ||
+                            (label === "Center Player" && playersBySlot[1]) ||
+                            (label === "Right Player" && playersBySlot[2])) && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await fetch("/api/join/remove", {
+                                    method: "POST",
+                                    headers: {
+                                      "Content-Type": "application/json",
+                                    },
+                                    body: JSON.stringify({
+                                      gameSessionId,
+                                      slot:
+                                        label === "Left Player"
+                                          ? 0
+                                          : label === "Center Player"
+                                          ? 1
+                                          : 2,
+                                    }),
+                                  });
+                                  const res = await fetch(
+                                    `/api/game-session/${id}`,
+                                    {
+                                      cache: "no-store",
+                                    }
+                                  );
+                                  const data = await res.json();
+                                  const next: Record<
+                                    number,
+                                    {
+                                      id: string;
+                                      name?: string;
+                                      image?: string;
+                                    } | null
+                                  > = { 0: null, 1: null, 2: null };
+                                  (data.players ?? []).forEach((p: any) => {
+                                    next[p.slot] = {
+                                      id: p.user.id,
+                                      name: p.user.name,
+                                      image: p.user.image,
+                                    };
+                                  });
+                                  setGameSessionId(data.id ?? null);
+                                  setJoinCode(data.joinCode ?? null);
+                                  setPlayersBySlot(next);
+                                } catch {}
+                              }}
+                              className="rounded bg-red-600/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white hover:bg-red-600"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
                         {playerStreaks[label] > 0 && (
                           <motion.div
                             initial={{ scale: 0, y: -5 }}
@@ -1576,7 +1972,8 @@ export default function GameViewPage() {
                                 key={`fire-${i}`}
                                 className="absolute w-1 h-1 rounded-full"
                                 style={{
-                                  background: i % 2 === 0 ? "#ff6b00" : "#ff0000",
+                                  background:
+                                    i % 2 === 0 ? "#ff6b00" : "#ff0000",
                                   left: `${10 + i * 15}%`,
                                   bottom: "100%",
                                 }}
@@ -1614,8 +2011,13 @@ export default function GameViewPage() {
             {overlay && (
               <ScoreAnimation
                 mode={overlay}
-                activeLabels={activeLabels}
+                activeLabels={assignedLabels}
                 lanePoints={lanePoints}
+                displayNames={{
+                  "Left Player": playersBySlot[0]?.name ?? undefined,
+                  "Center Player": playersBySlot[1]?.name ?? undefined,
+                  "Right Player": playersBySlot[2]?.name ?? undefined,
+                }}
               />
             )}
             {error && (
@@ -1637,7 +2039,8 @@ export default function GameViewPage() {
             show: playerPointsDisplay["Left Player"].show,
             basePoints: playerPointsDisplay["Left Player"].basePoints,
             shotMultiplier: playerPointsDisplay["Left Player"].shotMultiplier,
-            streakMultiplier: playerPointsDisplay["Left Player"].streakMultiplier,
+            streakMultiplier:
+              playerPointsDisplay["Left Player"].streakMultiplier,
           },
           {
             label: "Right Player",
@@ -1645,7 +2048,8 @@ export default function GameViewPage() {
             show: playerPointsDisplay["Right Player"].show,
             basePoints: playerPointsDisplay["Right Player"].basePoints,
             shotMultiplier: playerPointsDisplay["Right Player"].shotMultiplier,
-            streakMultiplier: playerPointsDisplay["Right Player"].streakMultiplier,
+            streakMultiplier:
+              playerPointsDisplay["Right Player"].streakMultiplier,
           },
           {
             label: "Center Player",
@@ -1653,7 +2057,8 @@ export default function GameViewPage() {
             show: playerPointsDisplay["Center Player"].show,
             basePoints: playerPointsDisplay["Center Player"].basePoints,
             shotMultiplier: playerPointsDisplay["Center Player"].shotMultiplier,
-            streakMultiplier: playerPointsDisplay["Center Player"].streakMultiplier,
+            streakMultiplier:
+              playerPointsDisplay["Center Player"].streakMultiplier,
           },
         ]}
       />

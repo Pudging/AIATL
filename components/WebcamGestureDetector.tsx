@@ -54,6 +54,10 @@ type Props = {
   extraContent?: ReactNode;
   onActiveLabelsChange?: (labels: PlayerLabel[]) => void;
   lanePoints?: Record<PlayerLabel, number | null>;
+  displayNames?: Partial<Record<PlayerLabel, string>>;
+  activeLabelsOverride?: PlayerLabel[];
+  hideReadyBanner?: boolean;
+  onReadyChange?: (ready: boolean) => void;
 };
 
 export default function WebcamGestureDetector({
@@ -62,6 +66,10 @@ export default function WebcamGestureDetector({
   extraContent,
   onActiveLabelsChange,
   lanePoints,
+  displayNames,
+  activeLabelsOverride,
+  hideReadyBanner,
+  onReadyChange,
 }: Props) {
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
@@ -100,12 +108,15 @@ export default function WebcamGestureDetector({
   const shotTimeoutsRef = useRef<Record<PlayerLabel, number>>(
     createPlayerMap(() => 0)
   );
-  const [currentShotTypes, setCurrentShotTypes] = useState<Record<PlayerLabel, ShotType>>(
-    createPlayerMap(() => null)
-  );
+  const [currentShotTypes, setCurrentShotTypes] = useState<
+    Record<PlayerLabel, ShotType>
+  >(createPlayerMap(() => null));
   const activeLabels = useMemo<PlayerLabel[]>(
-    () => PLAYER_LAYOUTS[playerCount],
-    [playerCount]
+    () =>
+      activeLabelsOverride && activeLabelsOverride.length > 0
+        ? (activeLabelsOverride as PlayerLabel[])
+        : PLAYER_LAYOUTS[playerCount],
+    [activeLabelsOverride, playerCount]
   );
 
   const assignVideoRef = (index: number) => (node: HTMLVideoElement | null) => {
@@ -172,6 +183,7 @@ export default function WebcamGestureDetector({
     async function init() {
       await tf.setBackend("webgl");
       await tf.ready();
+      onReadyChange?.(false);
       await setDetector("MULTI_LIGHTNING");
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -191,6 +203,7 @@ export default function WebcamGestureDetector({
           if (index === 0) setReady(true);
         };
       });
+      onReadyChange?.(true);
     }
     init();
     return () => {
@@ -457,25 +470,25 @@ export default function WebcamGestureDetector({
     const lw = kp("left_wrist"),
       rw = kp("right_wrist");
     const nose = kp("nose");
-    
+
     if (!ls || !rs || (!le && !re) || (!lw && !rw)) {
       resetDebugInfo(playerLabel);
       return false;
     }
-    
+
     // Check for dunk gesture (hand on head)
     const isDunkGesture = detectDunkGesture(lw, rw, nose);
-    
+
     // Check for layup gesture (one arm up)
     const isLayupGesture = detectLayupGesture(lw, rw, le, re, ls, rs);
-    
+
     // More strict checking for normal shot - BOTH arms must be clearly up
     const elbowsUp = !!(le && re && le.y < ls.y - 20 && re.y < rs.y - 20);
     const wristsUp = !!(lw && rw && lw.y < ls.y - 20 && rw.y < rs.y - 20);
-    
+
     // Both wrists should be at similar height (shooting form)
     const wristsLevel = lw && rw ? Math.abs(lw.y - rw.y) < 80 : false;
-    
+
     // Determine shot type
     let shotType: ShotType = null;
     if (isDunkGesture) {
@@ -485,8 +498,12 @@ export default function WebcamGestureDetector({
     } else if (elbowsUp && wristsUp && wristsLevel) {
       shotType = "normal";
     }
-    
-    if (!(elbowsUp && wristsUp && wristsLevel) && !isDunkGesture && !isLayupGesture) {
+
+    if (
+      !(elbowsUp && wristsUp && wristsLevel) &&
+      !isDunkGesture &&
+      !isLayupGesture
+    ) {
       debugInfoRef.current[playerLabel] = {
         elbowsUp,
         wristsUp,
@@ -571,7 +588,7 @@ export default function WebcamGestureDetector({
         (velocity > pxPerSecThreshold ||
           forwardComponent > pxPerSecThreshold * 0.75);
     }
-    
+
     debugInfoRef.current[playerLabel] = {
       elbowsUp,
       wristsUp,
@@ -581,7 +598,7 @@ export default function WebcamGestureDetector({
     };
     return decision;
   }
-  
+
   // Helper function to detect dunk gesture (hand DIRECTLY on head)
   function detectDunkGesture(
     lw: posedetection.Keypoint | undefined,
@@ -589,22 +606,22 @@ export default function WebcamGestureDetector({
     nose: posedetection.Keypoint | undefined
   ): boolean {
     if (!nose) return false;
-    
+
     // Hand must be DIRECTLY on top of head (above nose, close horizontally)
-    const leftOnHead = lw ? (
-      lw.y < nose.y - 20 && // Above the nose
-      Math.abs(lw.x - nose.x) < 60 && // Horizontally close to center
-      Math.hypot(lw.x - nose.x, lw.y - nose.y) < 100 // Overall close
-    ) : false;
-    const rightOnHead = rw ? (
-      rw.y < nose.y - 20 && // Above the nose
-      Math.abs(rw.x - nose.x) < 60 && // Horizontally close to center
-      Math.hypot(rw.x - nose.x, rw.y - nose.y) < 100 // Overall close
-    ) : false;
-    
+    const leftOnHead = lw
+      ? lw.y < nose.y - 20 && // Above the nose
+        Math.abs(lw.x - nose.x) < 60 && // Horizontally close to center
+        Math.hypot(lw.x - nose.x, lw.y - nose.y) < 100 // Overall close
+      : false;
+    const rightOnHead = rw
+      ? rw.y < nose.y - 20 && // Above the nose
+        Math.abs(rw.x - nose.x) < 60 && // Horizontally close to center
+        Math.hypot(rw.x - nose.x, rw.y - nose.y) < 100 // Overall close
+      : false;
+
     return leftOnHead || rightOnHead;
   }
-  
+
   // Helper function to detect layup gesture (one arm extended up at angle)
   function detectLayupGesture(
     lw: posedetection.Keypoint | undefined,
@@ -615,27 +632,36 @@ export default function WebcamGestureDetector({
     rs: posedetection.Keypoint
   ): boolean {
     // Check left arm: extended upward with good angle
-    const leftArmExtended = !!(le && lw && 
-      lw.y < ls.y - 50 && // Wrist well above shoulder
-      le.y < ls.y && // Elbow above shoulder
-      lw.y < le.y // Wrist above elbow (arm extended)
+    const leftArmExtended = !!(
+      (
+        le &&
+        lw &&
+        lw.y < ls.y - 50 && // Wrist well above shoulder
+        le.y < ls.y && // Elbow above shoulder
+        lw.y < le.y
+      ) // Wrist above elbow (arm extended)
     );
-    
+
     // Check right arm: extended upward with good angle
-    const rightArmExtended = !!(re && rw && 
-      rw.y < rs.y - 50 && // Wrist well above shoulder
-      re.y < rs.y && // Elbow above shoulder
-      rw.y < re.y // Wrist above elbow (arm extended)
+    const rightArmExtended = !!(
+      (
+        re &&
+        rw &&
+        rw.y < rs.y - 50 && // Wrist well above shoulder
+        re.y < rs.y && // Elbow above shoulder
+        rw.y < re.y
+      ) // Wrist above elbow (arm extended)
     );
-    
+
     // Other arm should be down or neutral (not raised)
     const leftArmDown = !!(le && le.y >= ls.y - 20);
     const rightArmDown = !!(re && re.y >= rs.y - 20);
-    
+
     // One arm extended up, other arm not raised
-    return (leftArmExtended && rightArmDown) || (rightArmExtended && leftArmDown);
+    return (
+      (leftArmExtended && rightArmDown) || (rightArmExtended && leftArmDown)
+    );
   }
-  
 
   useEffect(() => {
     let raf = 0;
@@ -705,14 +731,17 @@ export default function WebcamGestureDetector({
         if (!pose) {
           lastPlayerPosesRef.current[label] = null;
           resetDebugInfo(label);
-          setCurrentShotTypes(prev => ({ ...prev, [label]: null }));
+          setCurrentShotTypes((prev) => ({ ...prev, [label]: null }));
           return;
         }
-        
+
         // Update current shot type for display
         const debugInfo = debugInfoRef.current[label];
-        setCurrentShotTypes(prev => ({ ...prev, [label]: debugInfo.shotType }));
-        
+        setCurrentShotTypes((prev) => ({
+          ...prev,
+          [label]: debugInfo.shotType,
+        }));
+
         if (decision) {
           showShotIndicator(label);
         }
@@ -722,7 +751,9 @@ export default function WebcamGestureDetector({
           const shotType = debugInfoRef.current[label].shotType;
           onShootGesture?.(label, shotType);
           if (debug) {
-            const shotTypeLabel = shotType ? ` (${shotType.toUpperCase()})` : '';
+            const shotTypeLabel = shotType
+              ? ` (${shotType.toUpperCase()})`
+              : "";
             eventsRef.current.push({
               ts: nowTs,
               label: `Shot detected${shotTypeLabel} · ${label}`,
@@ -773,28 +804,33 @@ export default function WebcamGestureDetector({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1 text-sm text-slate-200">
-        <label className="font-semibold tracking-wide">
-          Players: {playerCount}
-        </label>
-        <input
-          type="range"
-          min={1}
-          max={3}
-          value={playerCount}
-          onChange={(event) =>
-            setPlayerCount(
-              Math.min(3, Math.max(1, Number(event.target.value))) as 1 | 2 | 3
-            )
-          }
-          className="w-full accent-sky-400"
-        />
-        <div className="flex justify-between text-xs uppercase tracking-wide text-slate-400">
-          <span>1</span>
-          <span>2</span>
-          <span>3</span>
+      {!activeLabelsOverride && (
+        <div className="flex flex-col gap-1 text-sm text-slate-200">
+          <label className="font-semibold tracking-wide">
+            Players: {playerCount}
+          </label>
+          <input
+            type="range"
+            min={1}
+            max={3}
+            value={playerCount}
+            onChange={(event) =>
+              setPlayerCount(
+                Math.min(3, Math.max(1, Number(event.target.value))) as
+                  | 1
+                  | 2
+                  | 3
+              )
+            }
+            className="w-full accent-sky-400"
+          />
+          <div className="flex justify-between text-xs uppercase tracking-wide text-slate-400">
+            <span>1</span>
+            <span>2</span>
+            <span>3</span>
+          </div>
         </div>
-      </div>
+      )}
       <div className="relative aspect-video overflow-hidden rounded-2xl bg-black">
         <video
           ref={assignVideoRef(0)}
@@ -818,11 +854,11 @@ export default function WebcamGestureDetector({
                 ? "right-3"
                 : "left-1/2 -translate-x-1/2";
             const shotType = currentShotTypes[label];
-            
+
             return (
               <div key={label} className={`absolute top-3 ${position}`}>
                 <div className="rounded bg-black/55 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-white mb-2">
-                  {label}
+                  {displayNames?.[label] ?? label}
                 </div>
                 {shotType && (
                   <div
@@ -834,17 +870,23 @@ export default function WebcamGestureDetector({
                         : "bg-green-500/90 text-white"
                     }`}
                   >
-                    {shotType === "dunk" ? "🏀 DUNK" : shotType === "layup" ? "🤾 LAYUP" : "🎯 SHOT"}
+                    {shotType === "dunk"
+                      ? "🏀 DUNK"
+                      : shotType === "layup"
+                      ? "🤾 LAYUP"
+                      : "🎯 SHOT"}
                   </div>
                 )}
               </div>
             );
           })}
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 rounded-full bg-black/65 px-4 py-1 text-xs text-white text-center">
-            {ready
-              ? "Webcam Ready · 2 arms=shot | 1 arm=layup | hand on head=dunk"
-              : "Initializing webcam..."}
-          </div>
+          {!hideReadyBanner && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 rounded-full bg-black/65 px-4 py-1 text-xs text-white text-center">
+              {ready
+                ? "Webcam Ready · 2 arms=shot | 1 arm=layup | hand on head=dunk"
+                : "Initializing webcam..."}
+            </div>
+          )}
         </div>
       </div>
       {extraContent ? <div>{extraContent}</div> : null}
@@ -871,7 +913,7 @@ export default function WebcamGestureDetector({
                       className="text-[10px] uppercase tracking-wider font-semibold mb-1"
                       style={{ color: PLAYER_ACCENT_COLORS[label] }}
                     >
-                      {label}
+                      {displayNames?.[label] ?? label}
                     </div>
                     <div
                       className={`font-extrabold leading-none ${
@@ -904,7 +946,7 @@ export default function WebcamGestureDetector({
                   key={label}
                   style={{ color: PLAYER_ACCENT_COLORS[label] }}
                 >
-                  {label}
+                  {displayNames?.[label] ?? label}
                 </span>
               ))}
             </div>

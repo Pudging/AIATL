@@ -15,12 +15,14 @@ type Props = {
   mode: "score" | "miss" | null;
   activeLabels?: LaneLabel[];
   lanePoints?: Partial<Record<LaneLabel, number | null>>;
+  displayNames?: Partial<Record<LaneLabel, string>>;
 };
 
 export default function ScoreAnimation({
   mode,
   activeLabels,
   lanePoints,
+  displayNames,
 }: Props) {
   const text = mode === "score" ? "Scored!" : "Missed!";
   const color = mode === "score" ? "text-emerald-400" : "text-rose-400";
@@ -112,7 +114,7 @@ export default function ScoreAnimation({
                               className="text-[10px] uppercase tracking-wider font-semibold mb-2"
                               style={{ color: PLAYER_ACCENT_COLORS[label] }}
                             >
-                              {label}
+                              {displayNames?.[label] ?? label}
                             </div>
                             <motion.div
                               className={`font-extrabold leading-none ${

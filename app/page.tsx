@@ -16,10 +16,12 @@ const formatGameClock = (clock?: string | null) => {
   if (!clock) return "—";
   if (clock === "0" || clock === "PT0S") return "00:00";
   const iso = clock.startsWith("PT") ? clock.slice(2) : clock;
-  const minutesMatch = iso.match(/(\d+)M/);
-  const secondsMatch = iso.match(/(\d+(\.\d+)?)S/);
-  const minutes = minutesMatch ? parseInt(minutesMatch[1], 10) : 0;
-  const seconds = secondsMatch ? Math.floor(parseFloat(secondsMatch[1])) : 0;
+  const minutesMatch = (iso ?? "").match(/(\d+)M/);
+  const secondsMatch = (iso ?? "").match(/(\d+(\.\d+)?)S/);
+  const minutes = minutesMatch?.[1] ? parseInt(minutesMatch[1], 10) : 0;
+  const seconds = secondsMatch?.[1]
+    ? Math.floor(parseFloat(secondsMatch[1]))
+    : 0;
   const pad = (n: number) => n.toString().padStart(2, "0");
   return `${pad(minutes)}:${pad(seconds)}`;
 };

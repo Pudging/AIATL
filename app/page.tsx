@@ -150,7 +150,7 @@ export default function HomePage() {
           <div className="relative z-10 flex gap-8">
             <div className="flex-shrink-0">
               <Image
-                src="/the_logo.png"
+                src="/logo.png"
                 alt="Logo"
                 width={320}
                 height={320}

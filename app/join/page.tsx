@@ -36,7 +36,7 @@ export default function JoinPage() {
     <div className="mx-auto mt-28 max-w-md rounded-2xl border border-white/10 bg-white/5 p-6">
       <div className="mb-6 flex items-center justify-center">
         <Image
-          src="/the_logo.png"
+          src="/logo.png"
           alt="Logo"
           width={64}
           height={64}

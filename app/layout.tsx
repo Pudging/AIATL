@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
 import AuthProvider from "@/components/AuthProvider";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -26,17 +27,16 @@ export default async function RootLayout({
               href="/"
               className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.65rem] font-semibold tracking-[0.35em] text-emerald-200 uppercase transition hover:border-emerald-300/60"
             >
-              <span className="h-2 w-2 rounded-full bg-emerald-300" />
-              NBA Gesture Predictor
+              <Image
+                src="/the_logo.png"
+                alt="Logo"
+                width={48}
+                height={48}
+                className="object-contain"
+              />
+              <span className="hidden sm:inline">NBA Gesture Predictor</span>
             </Link>
             <nav className="flex items-center gap-5 text-[0.6rem] font-semibold tracking-[0.35em] text-emerald-100/80 uppercase">
-              <span className="hidden text-purple-200/90 sm:inline">
-                Live Intel
-              </span>
-              <span className="hidden text-orange-200/90 sm:inline">
-                Gesture Lab
-              </span>
-              <span className="text-emerald-200/90">Boards</span>
               <Link
                 href="/join"
                 className="text-emerald-300 hover:text-emerald-200"

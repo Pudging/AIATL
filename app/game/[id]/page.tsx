@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import type { ParsedGameState } from "@/components/types";
 import type { ShotType } from "@/components/WebcamGestureDetector";
 import ScoreAnimation from "@/components/ScoreAnimation";
@@ -2374,7 +2375,7 @@ export default function GameViewPage() {
           </div>
 
           {/* Webcam + Gesture Detector */}
-          <div className="relative rounded-[36px] border border-white/10 bg-black/45 p-4 lg:p-6 shadow-lg shadow-black/50">
+          <div className="relative rounded-[48px] border border-white/10 bg-black/45 p-4 lg:p-6 shadow-lg shadow-black/50">
             <WebcamGestureDetector
               debug
               activeLabelsOverride={assignedLabels}
@@ -2584,8 +2585,8 @@ export default function GameViewPage() {
                         </motion.div>
                       );
                     })}
-                  </div>
-                  {/*<div className="border border-[#1e2f46] bg-[#0b1527] p-4 text-sm text-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.55)]">
+                    </div>
+                  <div className="rounded-xl border border-[#1e2f46] bg-[#0b1527] p-4 text-sm text-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.55)]">
                     <div className="flex items-center justify-between font-semibold uppercase tracking-[0.2em] text-emerald-200/80">
                       <span>Stream Delay (seconds)</span>
                       <span>{streamDelay}s</span>
@@ -2603,20 +2604,7 @@ export default function GameViewPage() {
                       Popup appears {Math.max(0, streamDelay - 3)}s before shot
                       on your stream
                     </div>
-                    <button
-                      onClick={() => {
-                        if (winAudioRef.current) {
-                          winAudioRef.current.currentTime = 0;
-                          winAudioRef.current.play().catch((err) => {
-                            console.log("Audio test failed:", err);
-                          });
-                        }
-                      }}
-                      className="mt-4 w-full shimmer border border-purple-400/40 bg-purple-500/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.35em] text-purple-100 transition hover:bg-purple-500/35 hover:scale-105"
-                    >
-                      Test Win Sound
-                    </button>
-                  </div> */}
+                  </div>
                 </>
               }
               onActiveLabelsChange={(labels: PlayerLabel[]) =>
@@ -2653,6 +2641,44 @@ export default function GameViewPage() {
           </div>
         </div>
       </div>
+      {((state?.lastAction || liveState?.lastAction) || (state?.recentActions?.length ?? 0) > 0 || (liveState?.recentActions?.length ?? 0) > 0) && (
+        <div className="fixed bottom-6 left-6 z-40 hidden max-w-6xl flex-col gap-3 md:flex">
+          {[...(state?.recentActions ?? liveState?.recentActions ?? []).slice(0, 2), ...((state?.lastAction || liveState?.lastAction) ? [state?.lastAction || liveState?.lastAction] : [])].slice(0, 3).map((act, idx) => (
+            <div
+              key={idx}
+              className="popup-flash relative overflow-hidden rounded-lg border-2 border-emerald-400/40 bg-gradient-to-br from-[#0f192b] to-[#1a1d29] px-8 py-4 text-base text-slate-100 shadow-[0_0_30px_rgba(16,185,129,0.3),0_20px_60px_rgba(0,0,0,0.7)]"
+              style={{
+                animation: 'popupFlash 0.6s ease-out, glowPulse 2s ease-in-out infinite, popupFadeOut 10s ease-in forwards'
+              }}
+            >
+              <div className="text-center">
+                <div className="text-sm font-semibold uppercase tracking-wider text-slate-300">
+                  {idx === 1 && (state?.lastAction || liveState?.lastAction) ? "INSTANT RESULT" : "LIVE UPDATE"}
+                </div>
+              </div>
+              <div className="mt-3 text-base font-semibold text-white">
+                {act?.playerName ?? act?.name ?? "Unknown"} ({act?.teamTricode ?? "NYY"})
+              </div>
+              <div className="mt-2 text-xs text-slate-300">
+                {act.actionType
+                  ? `${act.actionType} — ${act.shotResult ?? "Odds move"}`
+                  : act.description ?? act.shotResult ?? "Live line moved"}
+              </div>
+              <div className="mt-3 flex items-center justify-between text-xs text-emerald-300">
+                <span>Live odds shift</span>
+                <span className="border border-emerald-400/40 px-2 py-[2px] font-semibold text-emerald-100">
+                  {idx % 2 === 0 ? "+105 → -120" : "+160 → +140"}
+                </span>
+              </div>
+              <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-slate-400">
+                <span>Parlay ready</span>
+                <span className="text-emerald-200">Boost +15%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <ShotIncomingOverlay
         show={showShotIncoming}
         countdown={shotCountdown}

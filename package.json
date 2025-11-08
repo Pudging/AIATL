@@ -24,6 +24,7 @@
     "axios": "^1.7.7",
     "dotenv": "^17.2.3",
     "framer-motion": "^11.5.4",
+    "howler": "^2.2.4",
     "next": "14.1.4",
     "next-auth": "^4.24.13",
     "react": "18.3.1",
@@ -31,6 +32,7 @@
     "seedrandom": "^3.0.5"
   },
   "devDependencies": {
+    "@types/howler": "^2.2.11",
     "@types/node": "^20.11.25",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",

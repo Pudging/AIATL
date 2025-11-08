@@ -2479,7 +2479,7 @@ export default function GameViewPage() {
                                     Join: {host.joinCode}
                                   </div>
                                 </div>
-                                <button
+                                {/* <button
                                   onClick={async () => {
                                     if (
                                       !confirm(
@@ -2526,7 +2526,7 @@ export default function GameViewPage() {
                                   className="rounded bg-red-600/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-white hover:bg-red-600 transition"
                                 >
                                   Remove Host
-                                </button>
+                                </button> */}
                               </div>
                               {host.players.length > 0 ? (
                                 <div className="flex flex-wrap gap-2">

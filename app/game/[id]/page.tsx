@@ -470,10 +470,8 @@ export default function GameViewPage() {
   const [streamClockInput, setStreamClockInput] = useState("");
   const [streamPeriodInput, setStreamPeriodInput] = useState<number>(1);
   const [syncedPeriod, setSyncedPeriod] = useState<number>(1);
-  const [streamDelaySeconds, setStreamDelaySeconds] = useState<number>(0);
-  const [streamDelay, setStreamDelay] = useState<number>(3);
+  const [streamDelay, setStreamDelay] = useState<number>(0);
   const [showMoneyRain, setShowMoneyRain] = useState(false);
-  const [manualDelayAdjustment, setManualDelayAdjustment] = useState<number>(0);
   const [syncAnchor, setSyncAnchor] = useState<{
     nbaTimestamp: number;
     realWorldTime: number;
@@ -1022,10 +1020,12 @@ export default function GameViewPage() {
           const now = Date.now();
           setLiveState(data.state);
           setLiveUpdateCount((prev) => prev + 1);
-          detectNewShot(data.state);
 
           // Add to queue with timestamp
           stateQueueRef.current.push({ state: data.state, timestamp: now });
+          
+          // Detect shots from LIVE data (for regular games with polling)
+          detectNewShot(data.state, now, false);
 
           // Keep last 500 states (covers ~12.5 minutes of game time at 1.5s polling)
           // This handles even extreme stream delays of 10+ minutes
@@ -1081,6 +1081,9 @@ export default function GameViewPage() {
             setDelayedState(latestState);
             setState(latestState);
             setDelayedUpdateCount((prev) => prev + 1);
+            
+            // Detect shots even without sync (e.g., before user syncs)
+            detectNewShot(latestState, latestItem.timestamp, true);
           }
         }
         return;
@@ -1090,13 +1093,13 @@ export default function GameViewPage() {
       const now = Date.now();
       const elapsedSinceSync = now - syncAnchor.realWorldTime;
 
-      // Calculate target NBA timestamp: anchor + elapsed time + manual adjustment
-      // Manual adjustment SPEEDS UP progression (positive = catch up to stream faster)
+      // Calculate target NBA timestamp: anchor + elapsed time + stream delay adjustment
+      // streamDelay SPEEDS UP progression (reduces delay between live and displayed)
       // This accounts for your stream being ahead of where you synced
       const targetNbaTimestamp =
         syncAnchor.nbaTimestamp +
         elapsedSinceSync +
-        manualDelayAdjustment * 1000;
+        streamDelay * 1000;
 
       // For live games: don't go beyond the latest state we have
       const latestAvailableTimestamp =
@@ -1130,8 +1133,8 @@ export default function GameViewPage() {
         setState(matchedState);
         setDelayedUpdateCount((prev) => prev + 1);
 
-        // Detect new shots for prediction system
-        detectNewShot(matchedState);
+        // Detect shots from delayed state (what user sees now - TEST002 and synced games)
+        detectNewShot(matchedState, clampedTarget, true);
 
         const isClamped = clampedTarget !== targetNbaTimestamp;
         console.log(
@@ -1149,7 +1152,7 @@ export default function GameViewPage() {
     }, 100);
 
     return () => clearInterval(interval);
-  }, [syncAnchor, delayedState, delayedUpdateCount, manualDelayAdjustment]);
+  }, [syncAnchor, delayedState, delayedUpdateCount, streamDelay]);
 
   function registerPrediction(
     label: PlayerLabel | undefined,
@@ -1175,7 +1178,7 @@ export default function GameViewPage() {
     };
   }
 
-  function detectNewShot(gameState: ParsedGameState) {
+  function detectNewShot(gameState: ParsedGameState, timestamp: number, isFromDelayedState: boolean = false) {
     const lastShot = gameState?.lastShot;
     if (!lastShot || !lastShot.playerName) return;
 
@@ -1184,13 +1187,41 @@ export default function GameViewPage() {
 
     lastProcessedShotRef.current = shotId;
 
-    // For synced games (TEST002 or live with sync), show popup immediately with 3s countdown
-    // The shot is already appearing at the right time due to the sync system
-    const popupDelay = 0;
-
-    console.log(
-      `Shot detected! Clock: ${gameState.clock}, Showing popup immediately (synced playback)`
-    );
+    // Popup should appear 3 seconds before shot appears on user's screen
+    // If this shot is from the delayed state that user is CURRENTLY seeing, show popup immediately (shot is about to appear)
+    // If from live data, calculate when it will appear on their delayed screen
+    let popupDelay = 0;
+    
+    if (isTestGame || isFromDelayedState) {
+      // Shot is on screen NOW (from delayed state or TEST001 scrubber), show popup immediately
+      console.log(`[SHOT TIMING] Shot at ${gameState.clock} is on screen NOW, popup immediately`);
+      popupDelay = 0;
+    } else if (syncAnchor) {
+      // Shot from LIVE data - calculate when it will reach user's delayed screen
+      const shotWillAppearAt = 
+        syncAnchor.realWorldTime + 
+        (timestamp - syncAnchor.nbaTimestamp) - 
+        (streamDelay * 1000);
+      
+      const now = Date.now();
+      const timeUntilShotAppears = shotWillAppearAt - now;
+      popupDelay = Math.max(0, timeUntilShotAppears - 3000);
+      
+      console.log(
+        `[SHOT TIMING] Live shot at ${gameState.clock} | ` +
+        `Will appear in ${(timeUntilShotAppears / 1000).toFixed(1)}s | ` +
+        `Popup in ${(popupDelay / 1000).toFixed(1)}s`
+      );
+      
+      if (timeUntilShotAppears < -10000) {
+        console.warn(`[SHOT TIMING] Shot already passed, skipping`);
+        return;
+      }
+    } else {
+      // No sync - show immediately
+      console.log(`[SHOT TIMING] No sync, showing popup immediately`);
+      popupDelay = 0;
+    }
 
     const is3pt =
       (lastShot.points ?? 0) === 3 ||
@@ -2666,7 +2697,7 @@ export default function GameViewPage() {
             <div className="mt-5 space-y-5">
               <div>
                 <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-300">
-                  <span>Stream Delay</span>
+                  <span>Speed Up Playback</span>
                   <span>{streamDelay}s</span>
                 </div>
                 <input
@@ -2679,8 +2710,7 @@ export default function GameViewPage() {
                   className="mt-3 h-2 w-full cursor-pointer appearance-none rounded bg-white/10 accent-emerald-400"
                 />
                 <p className="mt-1 text-xs text-slate-400">
-                  Popups fire {Math.max(0, streamDelay - 3)}s ahead of your
-                  broadcast to offset delays.
+                  Reduce delay by {streamDelay}s. Popups appear {streamDelay + 3}s before your stream.
                 </p>
               </div>
               <div className="space-y-2">

@@ -1753,43 +1753,52 @@ export default function GameViewPage() {
       <div className="relative w-full px-6 pt-16 pb-16 sm:px-8 lg:px-12">
         <div className="grid gap-10 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
           <div className="space-y-6 border border-[#1f364d] bg-[#0b1426] p-6 shadow-[0_50px_120px_rgba(0,0,0,0.65)] backdrop-blur-md transition-transform duration-300">
-            {/* Header: Inning, Situation, Odds */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="text-sm opacity-75">
-                  Period {state?.period ?? "-"}
-                </div>
-                <div className="text-center">
-                  <div className="text-xs opacity-60 mb-1">Clock</div>
-                  <div className="text-2xl font-mono font-bold">
+            {/* Live Session Overview */}
+            <div className="rounded-xl border border-white/10 bg-black/30 p-5 space-y-5">
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.35em] text-slate-400">
+                    Game Status
+                  </div>
+                  <div className="text-2xl font-bold text-white">
+                    Period {state?.period ?? "-"} •{" "}
                     {formatClock(state?.clock ?? "")}
                   </div>
                 </div>
-                <div className="text-sm" />
               </div>
-              <div className="flex items-center justify-between text-xs">
-                <div className="space-y-1">
-                  <div className="opacity-60 font-mono">
-                    Dashboard: {isMounted ? currentTime : "--:--:--"}
+              <div className="grid grid-cols-2 gap-4 text-center">
+                <div className="rounded-lg border border-white/10 bg-black/40 p-3">
+                  <div className="text-xs uppercase tracking-wide text-emerald-200/80">
+                    {state?.awayTeam ?? "Away"}
                   </div>
-                  <div className="text-purple-200 font-semibold">
-                    Update #{delayedUpdateCount} (-{streamDelay}s delay)
+                  <div className="text-4xl font-black text-white">
+                    {state?.score?.away ?? 0}
                   </div>
                 </div>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setShowTutorial(true)}
-                    className="rounded-full bg-gradient-to-r from-blue-400/80 to-emerald-500/80 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.3em] text-blue-950 transition hover:from-blue-400 hover:to-emerald-400 flex items-center gap-1.5"
+                    className="rounded-full bg-gradient-to-r from-blue-400/80 to-emerald-500/80 px-4  text-xs font-semibold uppercase tracking-[0.3em] text-blue-950 transition hover:from-blue-400 hover:to-emerald-400 flex items-center "
                     title="Tutorial"
                   >
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <svg
+                      className="h-3.5 w-3.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
                     </svg>
                     Tutorial
                   </button>
                   <button
                     onClick={openDebugWindow}
-                    className="rounded-full bg-gradient-to-r from-emerald-400/80 to-purple-500/80 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-950 transition hover:from-emerald-400 hover:to-purple-400"
+                    className="rounded-full bg-gradient-to-r from-emerald-400/80 to-purple-500/80 px-1 py-1.5 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-950 transition hover:from-emerald-400 hover:to-purple-400"
                   >
                     Open Live Debug
                   </button>
@@ -1798,54 +1807,11 @@ export default function GameViewPage() {
                   <div className="text-emerald-300 font-mono">
                     Live: Update #{liveUpdateCount}
                   </div>
-                  <div className="text-xs text-purple-300/90 text-flash">
-                    {state?.lastShot?.shotResult || "Live"}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-[10px] uppercase tracking-[0.3em] text-purple-200/80">
-                    Dashboard Time
-                  </div>
-                  <div className="font-mono text-base text-slate-100">
-                    {isMounted ? currentTime : "--:--:--"}
-                  </div>
-                  <div className="mt-2 text-[10px] text-emerald-300 mlb-odds-flicker">
-                    Update #{delayedUpdateCount} (−{streamDelay}s delay)
-                  </div>
-                  <div className="text-[10px] text-slate-400">
-                    Live queue: {stateQueueRef.current.length}
+                  <div className="text-4xl font-black text-white">
+                    {state?.score?.home ?? 0}
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* Join Code Display */}
-            <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-4 flex flex-row">
-              <div className="text-xs uppercase tracking-[0.3em] text-emerald-200/80 my-2 grow">
-                Join Code {!joinCode && "Loading..."}
-                {joinCode && (
-                  <button
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(joinCode);
-                        // You could add a toast notification here
-                      } catch (err) {
-                        console.error("Failed to copy:", err);
-                      }
-                    }}
-                    className="rounded bg-emerald-500/20 px-3 mx-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-emerald-200 hover:bg-emerald-500/30 transition"
-                  >
-                    Copy
-                  </button>
-                )}
-              </div>
-              {joinCode && (
-                <div className="flex items-center justify-between">
-                  <div className="text-4xl font-mono font-bold text-emerald-300">
-                    {joinCode}
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Live Play Tracker */}
@@ -1896,120 +1862,6 @@ export default function GameViewPage() {
               </div>
             )}
 
-            {/* Stream Delay Slider */}
-            <div className="rounded-lg border border-white/10 bg-black/30 p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs opacity-70">
-                  Stream Delay (seconds)
-                </span>
-                <span className="text-sm font-bold">{streamDelay}s</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="30"
-                step="1"
-                value={streamDelay}
-                onChange={(e) => setStreamDelay(Number(e.target.value))}
-                className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-emerald-400"
-              />
-              <div className="text-xs opacity-60 mt-1">
-                Popup appears {Math.max(0, streamDelay - 3)}s before shot on
-                your stream
-              </div>
-            </div>
-
-            {/* Stream Clock Sync */}
-            <div className="rounded-lg border border-white/10 bg-black/30 p-3">
-              <div className="mb-3">
-                <div className="text-xs opacity-70 mb-2">
-                  Sync to Stream Clock
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="MM:SS"
-                    value={streamClockInput}
-                    onChange={(e) => setStreamClockInput(e.target.value)}
-                    className="flex-1 rounded bg-white/10 px-2 py-1 text-sm text-white placeholder:text-white/40 border border-white/20 focus:border-emerald-400 focus:outline-none"
-                  />
-                  <input
-                    type="number"
-                    min="1"
-                    max="4"
-                    placeholder="Period"
-                    value={streamPeriodInput}
-                    onChange={(e) =>
-                      setStreamPeriodInput(Number(e.target.value))
-                    }
-                    className="w-20 rounded bg-white/10 px-2 py-1 text-sm text-white placeholder:text-white/40 border border-white/20 focus:border-emerald-400 focus:outline-none"
-                  />
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  if (!streamClockInput) return;
-                  const matched = findStateByGameClock(
-                    streamClockInput,
-                    streamPeriodInput
-                  );
-                  if (matched) {
-                    // Find the timestamp for this state in the queue
-                    const stateItem = stateQueueRef.current.find(
-                      (item) =>
-                        item.state.clock === matched.state.clock &&
-                        item.state.period === matched.state.period
-                    );
-                    const nbaTimestamp = stateItem?.timestamp ?? Date.now();
-                    setSyncAnchor({
-                      nbaTimestamp,
-                      realWorldTime: Date.now(),
-                    });
-                    setSyncedPeriod(streamPeriodInput);
-                    setStreamGameClock(streamClockInput);
-                    console.log(
-                      `[SYNC] Synced to Period ${streamPeriodInput} • ${streamClockInput}`
-                    );
-                  } else {
-                    console.warn(
-                      `[SYNC] Could not find state for Period ${streamPeriodInput} • ${streamClockInput}`
-                    );
-                  }
-                }}
-                className="w-full rounded bg-gradient-to-r from-emerald-500/80 to-purple-500/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white transition hover:from-emerald-400 hover:to-purple-400"
-              >
-                Sync
-              </button>
-              {syncAnchor && (
-                <div className="mt-2 text-xs opacity-60">
-                  Synced: Period {syncedPeriod} • {streamGameClock}
-                </div>
-              )}
-            </div>
-
-            {/* Live Score */}
-            <div className="flex items-center justify-between rounded-lg border border-white/10 bg-black/30 p-3">
-              <div>
-                <div className="text-xs uppercase tracking-wide text-emerald-200/80">
-                  {state?.awayTeam ?? "Away"}
-                </div>
-                <div className="text-3xl font-bold">
-                  {state?.score?.away ?? 0}
-                </div>
-              </div>
-              <div className="text-xs uppercase tracking-[0.4em] text-purple-200">
-                LIVE
-              </div>
-              <div className="text-right">
-                <div className="text-xs uppercase tracking-wide text-emerald-200/80">
-                  {state?.homeTeam ?? "Home"}
-                </div>
-                <div className="text-3xl font-bold">
-                  {state?.score?.home ?? 0}
-                </div>
-              </div>
-            </div>
-
             {/* Last Shot Taken */}
             {state?.lastShot && state.lastShot.playerName && (
               <div className="rounded-lg border border-white/10 bg-gradient-to-r from-emerald-500/15 to-purple-500/20 p-3">
@@ -2022,66 +1874,6 @@ export default function GameViewPage() {
                     </span>
                   )}
                 </div>
-              </div>
-            )}
-
-            {/* Last Play Impact */}
-            {state?.lastShot && state.lastShot.playerName && (
-              <div className="popup-flash border border-emerald-400/30 bg-[#0f192b] p-4 shadow-[0_28px_60px_rgba(0,0,0,0.6)]">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.3em] text-slate-400">
-                      Last Play Impact
-                    </div>
-                    <div
-                      className="mt-1 text-xl font-semibold text-white text-flash"
-                      key={state.lastShot.playerName}
-                    >
-                      {state.lastShot.playerName} (
-                      {state.lastShot.teamTricode ?? "NYY"})
-                    </div>
-                    <div className="mt-1 flex items-center gap-3 text-sm text-slate-300">
-                      <span className="inline-flex items-center gap-2 rounded border border-white/10 px-2.5 py-1">
-                        <svg
-                          aria-hidden="true"
-                          className="h-4 w-4 text-emerald-200"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={1.4}
-                        >
-                          <path
-                            d="M4 18h16M4 6h16M7 6l5 6-5 6"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                        {state.lastShot.shotType ?? "Deep Fly to Right"}
-                      </span>
-                      <span
-                        className={`text-sm font-bold text-flash ${
-                          state.lastShot.shotResult
-                            ?.toLowerCase()
-                            .includes("made")
-                            ? "text-emerald-300"
-                            : "text-purple-200"
-                        }`}
-                        key={state.lastShot.shotResult}
-                      >
-                        {state.lastShot.shotResult
-                          ?.toLowerCase()
-                          .includes("made")
-                          ? "Scoring Play"
-                          : "Out Recorded"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                {state.lastShot.description && (
-                  <div className="mt-2 border border-white/10 bg-[#101a2d] px-3 py-2 text-xs text-slate-300/90">
-                    Live note: {state.lastShot.description}
-                  </div>
-                )}
               </div>
             )}
 
@@ -2200,6 +1992,33 @@ export default function GameViewPage() {
                   Tracking player metrics…
                 </div>
               )}
+            </div>
+
+            {/* Join Code Display */}
+            <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-4 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] uppercase tracking-[0.3em] text-emerald-200/80">
+                  Join Code
+                </span>
+                {joinCode && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(joinCode);
+                      } catch {}
+                    }}
+                    className="rounded bg-emerald-500/20 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.35em] text-emerald-200 hover:bg-emerald-500/30 transition"
+                  >
+                    Copy
+                  </button>
+                )}
+              </div>
+              <div className="text-4xl font-mono font-bold text-emerald-300">
+                {joinCode ?? "Loading..."}
+              </div>
+              <div className="text-xs text-emerald-200/70">
+                Share this code with players to join the lobby.
+              </div>
             </div>
 
             {/* Hot Streak Watch */}
@@ -2334,52 +2153,6 @@ export default function GameViewPage() {
                 )}
               </div>
             )}
-
-            {/* Player Stats Table */}
-            <div>
-              <div className="text-xs opacity-70 mb-2">Top Scorers</div>
-              <div className="max-h-48 overflow-auto pr-2">
-                <table className="w-full text-sm">
-                  <thead className="text-xs opacity-70 sticky top-0 bg-black/50">
-                    <tr>
-                      <th className="text-left py-1">Player</th>
-                      <th className="text-right">PTS</th>
-                      <th className="text-right">FG</th>
-                      <th className="text-right">FG%</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(state?.players ?? [])
-                      .sort((a, b) => (b.pts ?? 0) - (a.pts ?? 0))
-                      .slice(0, 10)
-                      .map((p) => (
-                        <tr
-                          key={p.personId}
-                          className="border-t border-white/10"
-                        >
-                          <td className="py-1">
-                            {p.name}
-                            {p.teamTricode && (
-                              <span className="text-xs opacity-60 ml-1">
-                                ({p.teamTricode})
-                              </span>
-                            )}
-                          </td>
-                          <td className="text-right font-mono font-semibold">
-                            {p.pts}
-                          </td>
-                          <td className="text-right font-mono text-xs">
-                            {p.fgm}/{p.fga}
-                          </td>
-                          <td className="text-right font-mono text-xs">
-                            {p.fgPct}%
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
           </div>
 
           {/* Webcam + Gesture Detector */}
@@ -2593,7 +2366,7 @@ export default function GameViewPage() {
                         </motion.div>
                       );
                     })}
-                    </div>
+                  </div>
                   <div className="rounded-xl border border-[#1e2f46] bg-[#0b1527] p-4 text-sm text-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.55)]">
                     <div className="flex items-center justify-between font-semibold uppercase tracking-[0.2em] text-emerald-200/80">
                       <span>Stream Delay (seconds)</span>
@@ -2629,6 +2402,80 @@ export default function GameViewPage() {
                 }
               }}
             />
+            <div className="mt-6 rounded-2xl border border-white/10 bg-black/30 p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] uppercase tracking-[0.3em] text-slate-300">
+                  Stream Controls
+                </span>
+                <span className="text-sm font-bold text-white">
+                  Delay {streamDelay}s
+                </span>
+              </div>
+              <div>
+                <input
+                  type="range"
+                  min="0"
+                  max="30"
+                  step="1"
+                  value={streamDelay}
+                  onChange={(e) => setStreamDelay(Number(e.target.value))}
+                  className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+                />
+                <div className="text-xs opacity-60 mt-1">
+                  Popups fire {Math.max(0, streamDelay - 3)}s ahead of your
+                  feed.
+                </div>
+              </div>
+              <div className="grid gap-2 md:grid-cols-[2fr_1fr]">
+                <input
+                  type="text"
+                  placeholder="MM:SS"
+                  value={streamClockInput}
+                  onChange={(e) => setStreamClockInput(e.target.value)}
+                  className="rounded bg-white/10 px-2 py-1 text-sm text-white placeholder:text-white/40 border border-white/20 focus:border-emerald-400 focus:outline-none"
+                />
+                <input
+                  type="number"
+                  min="1"
+                  max="4"
+                  placeholder="Period"
+                  value={streamPeriodInput}
+                  onChange={(e) => setStreamPeriodInput(Number(e.target.value))}
+                  className="rounded bg-white/10 px-2 py-1 text-sm text-white placeholder:text-white/40 border border-white/20 focus:border-emerald-400 focus:outline-none"
+                />
+              </div>
+              <button
+                onClick={() => {
+                  if (!streamClockInput) return;
+                  const matched = findStateByGameClock(
+                    streamClockInput,
+                    streamPeriodInput
+                  );
+                  if (matched) {
+                    const stateItem = stateQueueRef.current.find(
+                      (item) =>
+                        item.state.clock === matched.state.clock &&
+                        item.state.period === matched.state.period
+                    );
+                    const nbaTimestamp = stateItem?.timestamp ?? Date.now();
+                    setSyncAnchor({
+                      nbaTimestamp,
+                      realWorldTime: Date.now(),
+                    });
+                    setSyncedPeriod(streamPeriodInput);
+                    setStreamGameClock(streamClockInput);
+                  }
+                }}
+                className="w-full rounded bg-gradient-to-r from-emerald-500/80 to-purple-500/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white transition hover:from-emerald-400 hover:to-purple-400"
+              >
+                Sync To Clock
+              </button>
+              {syncAnchor && (
+                <div className="text-xs text-emerald-200/70">
+                  Synced to Period {syncedPeriod} • {streamGameClock}
+                </div>
+              )}
+            </div>
             {overlay && (
               <ScoreAnimation
                 mode={overlay}
@@ -2649,43 +2496,6 @@ export default function GameViewPage() {
           </div>
         </div>
       </div>
-      {((state?.lastAction || liveState?.lastAction) || (state?.recentActions?.length ?? 0) > 0 || (liveState?.recentActions?.length ?? 0) > 0) && (
-        <div className="fixed bottom-6 left-6 z-40 hidden max-w-6xl flex-col gap-3 md:flex">
-          {[...(state?.recentActions ?? liveState?.recentActions ?? []).slice(0, 2), ...((state?.lastAction || liveState?.lastAction) ? [state?.lastAction || liveState?.lastAction] : [])].slice(0, 3).map((act, idx) => (
-            <div
-              key={idx}
-              className="popup-flash relative overflow-hidden rounded-lg border-2 border-emerald-400/40 bg-gradient-to-br from-[#0f192b] to-[#1a1d29] px-8 py-4 text-base text-slate-100 shadow-[0_0_30px_rgba(16,185,129,0.3),0_20px_60px_rgba(0,0,0,0.7)]"
-              style={{
-                animation: 'popupFlash 0.6s ease-out, glowPulse 2s ease-in-out infinite, popupFadeOut 10s ease-in forwards'
-              }}
-            >
-              <div className="text-center">
-                <div className="text-sm font-semibold uppercase tracking-wider text-slate-300">
-                  {idx === 1 && (state?.lastAction || liveState?.lastAction) ? "INSTANT RESULT" : "LIVE UPDATE"}
-                </div>
-              </div>
-              <div className="mt-3 text-base font-semibold text-white">
-                {act?.playerName ?? act?.name ?? "Unknown"} ({act?.teamTricode ?? "NYY"})
-              </div>
-              <div className="mt-2 text-xs text-slate-300">
-                {act.actionType
-                  ? `${act.actionType} — ${act.shotResult ?? "Odds move"}`
-                  : act.description ?? act.shotResult ?? "Live line moved"}
-              </div>
-              <div className="mt-3 flex items-center justify-between text-xs text-emerald-300">
-                <span>Live odds shift</span>
-                <span className="border border-emerald-400/40 px-2 py-[2px] font-semibold text-emerald-100">
-                  {idx % 2 === 0 ? "+105 → -120" : "+160 → +140"}
-                </span>
-              </div>
-              <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-slate-400">
-                <span>Parlay ready</span>
-                <span className="text-emerald-200">Boost +15%</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
       <ShotIncomingOverlay
         show={showShotIncoming}
@@ -2732,7 +2542,10 @@ export default function GameViewPage() {
         points={pointsEarned}
         label={pointsEarnedLabel ?? undefined}
       />
-      <TutorialOverlay show={showTutorial} onClose={() => setShowTutorial(false)} />
+      <TutorialOverlay
+        show={showTutorial}
+        onClose={() => setShowTutorial(false)}
+      />
     </div>
   );
 }

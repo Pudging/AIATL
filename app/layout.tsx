@@ -30,13 +30,6 @@ export default async function RootLayout({
               NBA Gesture Predictor
             </Link>
             <nav className="flex items-center gap-5 text-[0.6rem] font-semibold tracking-[0.35em] text-emerald-100/80 uppercase">
-              <span className="hidden text-purple-200/90 sm:inline">
-                Live Intel
-              </span>
-              <span className="hidden text-orange-200/90 sm:inline">
-                Gesture Lab
-              </span>
-              <span className="text-emerald-200/90">Boards</span>
               <Link
                 href="/join"
                 className="text-emerald-300 hover:text-emerald-200"

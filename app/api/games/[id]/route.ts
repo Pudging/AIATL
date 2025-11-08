@@ -22,6 +22,8 @@ export async function GET(req: Request, { params }: Params) {
       const allStates = [];
       
       // Create a state for EVERY action to capture all significant events
+      let missingTimestamps = 0;
+      
       for (let i = 0; i < actions.length; i++) {
         const partialPbp = {
           ...pbp,
@@ -36,13 +38,40 @@ export async function GET(req: Request, { params }: Params) {
         const currentAction = actions[i];
         const timeActual = currentAction?.timeActual;
         
-        allStates.push({
-          state,
-          timeActual // ISO timestamp from NBA API
-        });
+        if (!timeActual) {
+          missingTimestamps++;
+          // Use previous action's timestamp or estimate
+          const prevTimeActual = i > 0 ? actions[i - 1]?.timeActual : null;
+          if (prevTimeActual) {
+            // Add 1 second to previous timestamp as fallback
+            const prevTime = new Date(prevTimeActual).getTime();
+            const estimatedTimeActual = new Date(prevTime + 1000).toISOString();
+            allStates.push({
+              state,
+              timeActual: estimatedTimeActual
+            });
+          } else {
+            // Skip if no timestamp available
+            continue;
+          }
+        } else {
+          allStates.push({
+            state,
+            timeActual
+          });
+        }
+      }
+      
+      if (missingTimestamps > 0) {
+        console.log(`[API TEST002] Warning: ${missingTimestamps} actions had missing timestamps (estimated)`);
       }
       
       console.log(`[API TEST002] Created ${allStates.length} states (one per action)`);
+      
+      // Debug: Log states around Q4 6:15 to check for gaps
+      const q4States = allStates.filter((s: any) => s.state.period === 4);
+      console.log(`[API TEST002] Q4 has ${q4States.length} states`);
+      
       return NextResponse.json({ gameId: params.id, states: allStates });
     }
     

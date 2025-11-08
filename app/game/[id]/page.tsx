@@ -246,6 +246,7 @@ export default function GameViewPage() {
     } | null = null;
 
     // Only look at states from the specified period
+    // Find the LAST (most recent) state that matches the clock time
     for (const item of stateQueueRef.current) {
       // Normalize period comparison (handle both number and string)
       const itemPeriod =
@@ -286,13 +287,27 @@ export default function GameViewPage() {
 
     // Find the state that is closest to but NOT AFTER the target timestamp
     // This ensures we don't jump ahead to future states
-    let bestState: { state: ParsedGameState; timestamp: number } | null = null;
-
-    for (const item of stateQueueRef.current) {
+    let bestState: { state: ParsedGameState; timestamp: number; index: number } | null = null;
+    
+    for (let i = 0; i < stateQueueRef.current.length; i++) {
+      const item = stateQueueRef.current[i];
+      if (!item) continue;
+      
       // Only consider states at or before the target
       if (item.timestamp <= targetTimestamp) {
         if (!bestState || item.timestamp > bestState.timestamp) {
-          bestState = { state: item.state, timestamp: item.timestamp };
+          bestState = { state: item.state, timestamp: item.timestamp, index: i };
+        }
+      }
+    }
+    
+    // Debug: Check if we're stuck
+    if (bestState) {
+      const nextState = stateQueueRef.current[bestState.index + 1];
+      if (nextState && targetTimestamp > bestState.timestamp) {
+        const gap = (nextState.timestamp - bestState.timestamp) / 1000;
+        if (gap > 30) {
+          console.warn(`[TIMESTAMP GAP] Stuck at Q${bestState.state.period} ${formatClock(bestState.state.clock || '')} | Next state is ${gap.toFixed(1)}s away | Target: ${new Date(targetTimestamp).toLocaleTimeString()}, Next: ${new Date(nextState.timestamp).toLocaleTimeString()}`);
         }
       }
     }
@@ -486,7 +501,7 @@ export default function GameViewPage() {
             const baseTime = now;
             const timePerState = 900000 / data.states.length;
             data.states.forEach((item: any, index: number) => {
-              const timestamp = baseTime + index * timePerState;
+              const timestamp = baseTime + (index * timePerState);
               stateQueueRef.current.push({ state: item.state, timestamp });
             });
 
@@ -616,12 +631,13 @@ export default function GameViewPage() {
 
       // Find state closest to target NBA timestamp
       const matchedState = findStateByTimestamp(clampedTarget);
-
-      if (
-        matchedState &&
-        (!delayedState ||
-          JSON.stringify(matchedState) !== JSON.stringify(delayedState))
-      ) {
+      
+      if (!matchedState) {
+        console.warn(`[PROGRESS] No state found for target ${new Date(clampedTarget).toLocaleTimeString()} | Queue size: ${stateQueueRef.current.length}`);
+        return;
+      }
+      
+      if (matchedState && (!delayedState || JSON.stringify(matchedState) !== JSON.stringify(delayedState))) {
         setDelayedState(matchedState);
         setState(matchedState);
         setDelayedUpdateCount((prev) => prev + 1);

@@ -405,7 +405,7 @@ export default function GameViewPage() {
 
             // Map NBA timestamps to a timeline starting from NOW
             // Each state's timestamp = now + (time since game start)
-            data.states.forEach((item, index) => {
+            data.states.forEach((item: any, index: number) => {
               const actionTime = new Date(item.timeActual).getTime();
               const offsetFromStart = actionTime - firstTime;
               const timestamp = now + offsetFromStart;
@@ -448,18 +448,20 @@ export default function GameViewPage() {
                 now + gameDuration
               ).toLocaleTimeString()}`
             );
-            console.log(
-              `[TEST002] Queue first timestamp: ${new Date(
-                stateQueueRef.current[0].timestamp
-              ).toLocaleTimeString()}`
-            );
-            console.log(
-              `[TEST002] Queue last timestamp: ${new Date(
-                stateQueueRef.current[
-                  stateQueueRef.current.length - 1
-                ].timestamp
-              ).toLocaleTimeString()}`
-            );
+            if (stateQueueRef.current.length > 0) {
+              console.log(
+                `[TEST002] Queue first timestamp: ${new Date(
+                  stateQueueRef.current[0]!.timestamp
+                ).toLocaleTimeString()}`
+              );
+              const lastItem =
+                stateQueueRef.current[stateQueueRef.current.length - 1]!;
+              console.log(
+                `[TEST002] Queue last timestamp: ${new Date(
+                  lastItem.timestamp
+                ).toLocaleTimeString()}`
+              );
+            }
             console.log(`[TEST002] Auto-playing from start...`);
           } else {
             console.warn(
@@ -467,7 +469,7 @@ export default function GameViewPage() {
             );
             const baseTime = now;
             const timePerState = 900000 / data.states.length;
-            data.states.forEach((item, index) => {
+            data.states.forEach((item: any, index: number) => {
               const timestamp = baseTime + index * timePerState;
               stateQueueRef.current.push({ state: item.state, timestamp });
             });
@@ -1368,10 +1370,13 @@ export default function GameViewPage() {
                           });
 
                           // Calculate actual delay for display purposes
-                          const latestTimestamp =
+                          const last =
                             stateQueueRef.current[
                               stateQueueRef.current.length - 1
-                            ].timestamp;
+                            ];
+                          const latestTimestamp = last
+                            ? last.timestamp
+                            : matchedItem.timestamp;
                           const actualDelay =
                             (latestTimestamp - matchedItem.timestamp) / 1000;
                           setStreamDelaySeconds(actualDelay);

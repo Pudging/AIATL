@@ -415,7 +415,8 @@ export default function GameViewPage() {
       const elapsedSinceSync = now - syncAnchor.realWorldTime;
       
       // Calculate target NBA timestamp: anchor + elapsed time - manual adjustment
-      // Manual adjustment adds delay (positive = show older data)
+      // Manual adjustment SLOWS DOWN progression (positive = stay on older game states longer)
+      // This accounts for the time it took to type in the sync time
       const targetNbaTimestamp = syncAnchor.nbaTimestamp + elapsedSinceSync - (manualDelayAdjustment * 1000);
       
       // For live games: don't go beyond the latest state we have

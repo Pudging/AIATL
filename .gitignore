@@ -1,0 +1,48 @@
+# Node
+node_modules/
+logs
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-debug.log*
+log/
+pids
+*.pid
+*.seed
+
+# Next.js
+.next/
+out/
+.vercel/
+.next/cache/
+
+# Build / Coverage
+dist/
+coverage/
+*.tsbuildinfo
+
+# Caches
+.cache/
+.eslintcache
+turbo/
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Misc
+*.orig
+
+

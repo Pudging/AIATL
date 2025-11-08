@@ -28,7 +28,7 @@ export default async function RootLayout({
               className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.65rem] font-semibold tracking-[0.35em] text-emerald-200 uppercase transition hover:border-emerald-300/60"
             >
               <Image
-                src="/logo.png"
+                src="/logo.svg"
                 alt="Logo"
                 width={48}
                 height={48}

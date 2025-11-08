@@ -102,7 +102,7 @@ export default function HomePage() {
       logo: "https://cdn.nba.com/logos/nba/1610612738/global/L/logo.svg",
     },
   };
-  
+
   const testGame2: SimplifiedGame = {
     id: "test002",
     status: 2,
@@ -150,7 +150,7 @@ export default function HomePage() {
           <div className="relative z-10 flex gap-8">
             <div className="flex-shrink-0">
               <Image
-                src="/logo.png"
+                src="/logo.svg"
                 alt="Logo"
                 width={320}
                 height={320}
@@ -168,41 +168,43 @@ export default function HomePage() {
                 </h1>
                 <p className="mt-3 max-w-2xl text-base text-emerald-100/90">
                   We fuse pose detection with live box scores to surface which
-                  players are most likely to fire next. Dial in on the best spots,
-                  then run with confidence.
+                  players are most likely to fire next. Dial in on the best
+                  spots, then run with confidence.
                 </p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-emerald-900/60 via-black/30 to-black/10 p-4">
-                <p className="text-xs uppercase tracking-[0.5em] text-emerald-200">
-                  Hit rate
-                </p>
-                <p className="mt-2 text-3xl font-black text-emerald-300">82%</p>
-                <p className="text-xs text-emerald-100/70">
-                  Last 40 tracked shots
-                </p>
+                <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-emerald-900/60 via-black/30 to-black/10 p-4">
+                  <p className="text-xs uppercase tracking-[0.5em] text-emerald-200">
+                    Hit rate
+                  </p>
+                  <p className="mt-2 text-3xl font-black text-emerald-300">
+                    82%
+                  </p>
+                  <p className="text-xs text-emerald-100/70">
+                    Last 40 tracked shots
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-purple-900/50 via-black/30 to-black/10 p-4">
+                  <p className="text-xs uppercase tracking-[0.5em] text-purple-200">
+                    Live props
+                  </p>
+                  <p className="mt-2 text-3xl font-black text-purple-200">17</p>
+                  <p className="text-xs text-purple-100/70">
+                    Games with active intel
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-purple-900/40 via-black/25 to-black/5 p-4">
+                  <p className="text-xs uppercase tracking-[0.5em] text-purple-200">
+                    Response
+                  </p>
+                  <p className="mt-2 text-3xl font-black text-purple-200">
+                    220ms
+                  </p>
+                  <p className="text-xs text-purple-100/70">
+                    Avg model reaction time
+                  </p>
+                </div>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-purple-900/50 via-black/30 to-black/10 p-4">
-                <p className="text-xs uppercase tracking-[0.5em] text-purple-200">
-                  Live props
-                </p>
-                <p className="mt-2 text-3xl font-black text-purple-200">17</p>
-                <p className="text-xs text-purple-100/70">
-                  Games with active intel
-                </p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-purple-900/40 via-black/25 to-black/5 p-4">
-                <p className="text-xs uppercase tracking-[0.5em] text-purple-200">
-                  Response
-                </p>
-                <p className="mt-2 text-3xl font-black text-purple-200">
-                  220ms
-                </p>
-                <p className="text-xs text-purple-100/70">
-                  Avg model reaction time
-                </p>
-              </div>
-            </div>
             </div>
           </div>
           <div className="pointer-events-none absolute inset-0">

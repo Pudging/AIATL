@@ -1117,20 +1117,6 @@ export default function WebcamGestureDetector({
                 : "Initializing camera feed..."}
             </div>
           )}
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-60">
-            <svg
-              aria-hidden="true"
-              className="h-32 w-32 text-emerald-200/30"
-              viewBox="0 0 120 120"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.6}
-            >
-              <path d="M10 100 L60 10 L110 100 Z" strokeLinecap="round" />
-              <circle cx="60" cy="45" r="14" />
-              <line x1="35" y1="90" x2="85" y2="90" />
-            </svg>
-          </div>
         </div>
       </div>
       {extraContent ? <div>{extraContent}</div> : null}

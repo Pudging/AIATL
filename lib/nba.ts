@@ -114,13 +114,44 @@ export function parseGameState(playByPlayJson: any): ParsedGameState {
   const period = game.period ?? null;
   const clock = game.gameClock || lastAction?.clock || '';
 
+  const recentActions = actions.slice(-10).reverse().map((act: any) => ({
+    playerName: act.playerNameI || act.playerName,
+    teamTricode: act.teamTricode,
+    actionType: act.actionType,
+    shotResult: act.shotResult,
+    description: act.description
+  }));
+
+  let lastShot: any = null;
+  for (let i = actions.length - 1; i >= 0; i--) {
+    const a = actions[i];
+    if (a?.actionType === 'shot' || a?.actionType === '2pt' || a?.actionType === '3pt') {
+      const shotTypeStr = (a.subType || a.shotType || a.actionType || '').toString();
+      const is3 = shotTypeStr.toLowerCase().includes('3') || a.points === 3 || a.pointsTotal === 3;
+      const shotResultStr = (a.shotResult || a.result || '').toString();
+      lastShot = {
+        playerName: a.playerNameI || a.playerName || 'Unknown',
+        teamTricode: a.teamTricode || a.teamTricode1,
+        shotResult: shotResultStr || 'Unknown',
+        shotType: shotTypeStr || (is3 ? '3PT' : '2PT'),
+        points: is3 ? 3 : 2,
+        description: a.description || a.descriptionLong
+      };
+      break;
+    }
+  }
+
   return {
     period,
     clock,
     score,
+    homeTeam: game.homeTeam?.teamTricode ?? game.homeTeam?.teamName,
+    awayTeam: game.awayTeam?.teamTricode ?? game.awayTeam?.teamName,
     shooter,
     ballHandler,
     lastAction,
+    lastShot,
+    recentActions,
     players: Array.from(playerStats.entries()).map(([personId, s]) => ({
       personId,
       ...s,

@@ -30,9 +30,13 @@ export type ParsedGameState = {
   period: number | string | null;
   clock: string;
   score: { home: number; away: number };
+  homeTeam?: string;
+  awayTeam?: string;
   shooter: { personId?: string; name?: string; teamTricode?: string; result?: string } | null;
   ballHandler: { personId?: string; name?: string; teamTricode?: string } | null;
   lastAction: any;
+  lastShot?: any;
+  recentActions?: any[];
   players: PlayerStat[];
 };
 

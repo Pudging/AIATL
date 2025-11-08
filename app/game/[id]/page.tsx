@@ -1799,7 +1799,7 @@ export default function GameViewPage() {
           </div>
 
           {/* Webcam + Gesture Detector */}
-          <div className="relative rounded-[36px] border border-white/10 bg-black/45 p-4 lg:p-6 shadow-lg shadow-black/50">
+          <div className="relative rounded-[48px] border border-white/10 bg-black/45 p-4 lg:p-6 shadow-lg shadow-black/50">
             <WebcamGestureDetector
               debug
               activeLabelsOverride={assignedLabels}
@@ -1999,7 +1999,7 @@ export default function GameViewPage() {
                     );
                   })}
                     </div>
-                  <div className="border border-[#1e2f46] bg-[#0b1527] p-4 text-sm text-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.55)]">
+                  <div className="rounded-xl border border-[#1e2f46] bg-[#0b1527] p-4 text-sm text-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.55)]">
                     <div className="flex items-center justify-between font-semibold uppercase tracking-[0.2em] text-emerald-200/80">
                       <span>Stream Delay (seconds)</span>
                       <span>{streamDelay}s</span>
@@ -2017,19 +2017,6 @@ export default function GameViewPage() {
                       Popup appears {Math.max(0, streamDelay - 3)}s before shot
                       on your stream
                     </div>
-                    <button
-                      onClick={() => {
-                        if (winAudioRef.current) {
-                          winAudioRef.current.currentTime = 0;
-                          winAudioRef.current.play().catch(err => {
-                            console.log('Audio test failed:', err);
-                          });
-                        }
-                      }}
-                      className="mt-4 w-full shimmer border border-purple-400/40 bg-purple-500/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.35em] text-purple-100 transition hover:bg-purple-500/35 hover:scale-105"
-                    >
-                      Test Win Sound
-                    </button>
                   </div>
                 </>
               }
@@ -2066,13 +2053,13 @@ export default function GameViewPage() {
         </div>
       </div>
       {((state?.lastAction || liveState?.lastAction) || (state?.recentActions?.length ?? 0) > 0 || (liveState?.recentActions?.length ?? 0) > 0) && (
-        <div className="fixed bottom-6 left-6 z-40 hidden max-w-3xl flex-col gap-3 md:flex">
+        <div className="fixed bottom-6 left-6 z-40 hidden max-w-6xl flex-col gap-3 md:flex">
           {[...(state?.recentActions ?? liveState?.recentActions ?? []).slice(0, 2), ...((state?.lastAction || liveState?.lastAction) ? [state?.lastAction || liveState?.lastAction] : [])].slice(0, 3).map((act, idx) => (
             <div
               key={idx}
               className="popup-flash relative overflow-hidden rounded-lg border-2 border-emerald-400/40 bg-gradient-to-br from-[#0f192b] to-[#1a1d29] px-8 py-4 text-base text-slate-100 shadow-[0_0_30px_rgba(16,185,129,0.3),0_20px_60px_rgba(0,0,0,0.7)]"
               style={{
-                animation: 'popupFlash 0.6s ease-out, glowPulse 2s ease-in-out infinite, popupFadeOut 5s ease-in forwards'
+                animation: 'popupFlash 0.6s ease-out, glowPulse 2s ease-in-out infinite, popupFadeOut 10s ease-in forwards'
               }}
             >
               <div className="text-center">

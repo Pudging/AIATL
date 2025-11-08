@@ -82,7 +82,21 @@ export default function GameViewPage() {
 
       switch (key) {
         case "win": {
-          // Cascading coins falling - ascending notes
+          // Play the MP3 file
+          const sound = soundBankRef.current.win;
+          if (sound) {
+            if (sound.state() !== "loaded") {
+              sound.once("load", () => sound.play());
+            } else {
+              try {
+                sound.play();
+              } catch (error) {
+                console.warn("[SOUND] Failed to play win mp3:", error);
+              }
+            }
+          }
+          
+          // Also play cascading coins falling - ascending notes
           const notes = [523, 587, 659, 698, 784, 880, 988, 1047]; // C5 to C6 scale
           const noteDelay = 0.05; // Fast cascade
           

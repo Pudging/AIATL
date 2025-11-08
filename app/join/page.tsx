@@ -2,6 +2,7 @@
 
 import { useSession, signIn } from "next-auth/react";
 import { useEffect, useState } from "react";
+import Image from "next/image";
 
 export default function JoinPage() {
   const { data: session, status } = useSession();
@@ -33,6 +34,15 @@ export default function JoinPage() {
 
   return (
     <div className="mx-auto mt-28 max-w-md rounded-2xl border border-white/10 bg-white/5 p-6">
+      <div className="mb-6 flex items-center justify-center">
+        <Image
+          src="/the_logo.png"
+          alt="Logo"
+          width={64}
+          height={64}
+          className="object-contain"
+        />
+      </div>
       <h1 className="mb-4 text-xl font-bold">Join a Game</h1>
       <form
         className="grid gap-3"

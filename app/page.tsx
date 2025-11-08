@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import type { SimplifiedGame } from "@/components/types";
 
 const brandPalette = {
@@ -146,22 +147,32 @@ export default function HomePage() {
       </div>
       <div className="relative mx-auto mt-8 flex w-full flex-col gap-8 px-4 py-10 sm:px-6 lg:px-10">
         <section className="relative overflow-hidden rounded-[36px] border border-emerald-500/30 bg-gradient-to-r from-[#022d20] via-[#052017] to-[#0b1113] p-10 shadow-[0_25px_80px_rgba(0,0,0,0.55)]">
-          <div className="relative z-10 space-y-4">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-[0.6em] text-emerald-200">
-              <span className="h-2 w-2 rounded-full bg-emerald-300" />
-              NBA Gesture Predictor
+          <div className="relative z-10 flex gap-8">
+            <div className="flex-shrink-0">
+              <Image
+                src="/the_logo.png"
+                alt="Logo"
+                width={320}
+                height={320}
+                className="object-contain"
+              />
             </div>
-            <div>
-              <h1 className="text-5xl font-black tracking-tight text-white sm:text-6xl">
-                A green-room radar for who&apos;s about to rise.
-              </h1>
-              <p className="mt-3 max-w-2xl text-base text-emerald-100/90">
-                We fuse pose detection with live box scores to surface which
-                players are most likely to fire next. Dial in on the best spots,
-                then run with confidence.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="flex-1 space-y-4">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-[0.6em] text-emerald-200">
+                <span className="h-2 w-2 rounded-full bg-emerald-300" />
+                NBA Gesture Predictor
+              </div>
+              <div>
+                <h1 className="text-5xl font-black tracking-tight text-white sm:text-6xl">
+                  A green-room radar for who&apos;s about to rise.
+                </h1>
+                <p className="mt-3 max-w-2xl text-base text-emerald-100/90">
+                  We fuse pose detection with live box scores to surface which
+                  players are most likely to fire next. Dial in on the best spots,
+                  then run with confidence.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-emerald-900/60 via-black/30 to-black/10 p-4">
                 <p className="text-xs uppercase tracking-[0.5em] text-emerald-200">
                   Hit rate
@@ -191,6 +202,7 @@ export default function HomePage() {
                   Avg model reaction time
                 </p>
               </div>
+            </div>
             </div>
           </div>
           <div className="pointer-events-none absolute inset-0">

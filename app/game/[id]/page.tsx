@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import type { ParsedGameState } from "@/components/types";
 import type { ShotType } from "@/components/WebcamGestureDetector";
 import ScoreAnimation from "@/components/ScoreAnimation";

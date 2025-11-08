@@ -99,8 +99,30 @@ export default function HomePage() {
       logo: "https://cdn.nba.com/logos/nba/1610612738/global/L/logo.svg",
     },
   };
+  
+  const testGame2: SimplifiedGame = {
+    id: "test002",
+    status: 2,
+    statusText: "PLAYOFF GAME (REAL DATA)",
+    period: 4,
+    gameClock: "PT00M23.80S",
+    home: {
+      name: "Knicks",
+      tricode: "NYK",
+      id: 1610612752,
+      score: 123,
+      logo: "https://cdn.nba.com/logos/nba/1610612752/global/L/logo.svg",
+    },
+    away: {
+      name: "Pistons",
+      tricode: "DET",
+      id: 1610612765,
+      score: 112,
+      logo: "https://cdn.nba.com/logos/nba/1610612765/global/L/logo.svg",
+    },
+  };
 
-  const allGames = games.length > 0 ? games : [testGame];
+  const allGames = games.length > 0 ? games : [testGame, testGame2];
 
   return (
     <div

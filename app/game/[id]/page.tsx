@@ -81,6 +81,11 @@ export default function GameViewPage() {
   const lastProcessedShotRef = useRef<string | null>(null);
   const [streamGameClock, setStreamGameClock] = useState("");
   const [streamClockInput, setStreamClockInput] = useState("");
+  const [streamPeriodInput, setStreamPeriodInput] = useState<number>(1);
+  const [syncedPeriod, setSyncedPeriod] = useState<number>(1);
+  const [streamDelaySeconds, setStreamDelaySeconds] = useState<number>(0);
+  const [manualDelayAdjustment, setManualDelayAdjustment] = useState<number>(0);
+  const [syncAnchor, setSyncAnchor] = useState<{ nbaTimestamp: number; realWorldTime: number } | null>(null);
   const [predictionWindowActive, setPredictionWindowActive] = useState(false);
   const [showPointsEarned, setShowPointsEarned] = useState(false);
   const [pointsEarned, setPointsEarned] = useState(0);
@@ -142,41 +147,84 @@ export default function GameViewPage() {
     return 0;
   };
 
-  // Helper: Get a unique game position identifier (period + clock)
-  const getGamePosition = (state: ParsedGameState): number => {
-    const period = typeof state.period === 'number' ? state.period : parseInt(String(state.period || '1'), 10);
-    const clockSeconds = clockToSeconds(state.clock || "");
-    // Each period is 12 minutes (720 seconds)
-    // Position = (period * 720) - clockSeconds
-    // This gives us a monotonically increasing number as game progresses
-    return (period * 720) - clockSeconds;
+  // Helper: Format clock for display (converts PT format to MM:SS)
+  const formatClock = (clock: string): string => {
+    if (!clock) return "--:--";
+    
+    // If already in MM:SS format, return as is
+    if (!clock.startsWith("PT")) return clock;
+    
+    // Parse PT format
+    const minutesMatch = clock.match(/(\d+)M/);
+    const secondsMatch = clock.match(/(\d+(?:\.\d+)?)S/);
+    const minutes = minutesMatch ? parseInt(minutesMatch[1], 10) : 0;
+    const seconds = secondsMatch ? Math.floor(parseFloat(secondsMatch[1])) : 0;
+    
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  // Helper: Find state closest to a given game clock
-  const findStateByGameClock = (targetClock: string): ParsedGameState | null => {
+  // Helper: Find state by game clock and period (for initial sync)
+  // Returns the state and calculates delay in seconds
+  const findStateByGameClock = (targetClock: string, targetPeriod?: number): { state: ParsedGameState; delaySeconds: number } | null => {
     if (!targetClock || stateQueueRef.current.length === 0) return null;
     
-    // Get the most recent state to determine current period
+    // Use provided period or fall back to current period
     const latestState = stateQueueRef.current[stateQueueRef.current.length - 1].state;
-    const currentPeriod = latestState.period;
+    const searchPeriod = targetPeriod ?? latestState.period;
     
     const targetSeconds = clockToSeconds(targetClock);
-    let closestState: { state: ParsedGameState; diff: number } | null = null;
+    let closestMatch: { state: ParsedGameState; timestamp: number; diff: number } | null = null;
     
-    // Only look at states from the same period
+    // Only look at states from the specified period
     for (const item of stateQueueRef.current) {
-      if (item.state.period !== currentPeriod) continue;
+      // Normalize period comparison (handle both number and string)
+      const itemPeriod = typeof item.state.period === 'number' 
+        ? item.state.period 
+        : parseInt(String(item.state.period || '1'), 10);
+      
+      if (itemPeriod !== searchPeriod) continue;
       
       const stateClock = item.state.clock || "";
       const stateSeconds = clockToSeconds(stateClock);
       const diff = Math.abs(stateSeconds - targetSeconds);
       
-      if (!closestState || diff < closestState.diff) {
-        closestState = { state: item.state, diff };
+      if (!closestMatch || diff < closestMatch.diff) {
+        closestMatch = { 
+          state: item.state, 
+          timestamp: item.timestamp,
+          diff 
+        };
       }
     }
     
-    return closestState ? closestState.state : null;
+    if (!closestMatch) return null;
+    
+    // Calculate delay: how many seconds behind live are we?
+    const latestTimestamp = stateQueueRef.current[stateQueueRef.current.length - 1].timestamp;
+    const delaySeconds = (latestTimestamp - closestMatch.timestamp) / 1000;
+    
+    return { state: closestMatch.state, delaySeconds };
+  };
+
+  // Helper: Find state by timestamp (for tracking with delay)
+  const findStateByTimestamp = (targetTimestamp: number): ParsedGameState | null => {
+    if (stateQueueRef.current.length === 0) return null;
+    
+    // Find the state that is closest to but NOT AFTER the target timestamp
+    // This ensures we don't jump ahead to future states
+    let bestState: { state: ParsedGameState; timestamp: number } | null = null;
+    
+    for (const item of stateQueueRef.current) {
+      // Only consider states at or before the target
+      if (item.timestamp <= targetTimestamp) {
+        if (!bestState || item.timestamp > bestState.timestamp) {
+          bestState = { state: item.state, timestamp: item.timestamp };
+        }
+      }
+    }
+    
+    // If no state found before target, return the first state
+    return bestState ? bestState.state : stateQueueRef.current[0].state;
   };
 
   // Debug logging
@@ -200,6 +248,91 @@ export default function GameViewPage() {
 
   useEffect(() => {
     let active = true;
+    const isTest002 = id?.toUpperCase() === 'TEST002';
+    
+    async function loadAll() {
+      // For TEST002, load all historical states at once
+      try {
+        console.log('[TEST002] Loading all historical states...');
+        const res = await fetch(`/api/games/${id}?loadAll=true`, { cache: "no-store" });
+        const data = await res.json();
+        if (!active) return;
+        
+        // Clear existing queue to avoid duplicates
+        stateQueueRef.current = [];
+        
+        if (data?.states && Array.isArray(data.states)) {
+          const now = Date.now();
+          const firstTimeActual = data.states[0]?.timeActual;
+          const lastTimeActual = data.states[data.states.length - 1]?.timeActual;
+          
+          console.log(`[TEST002] Raw data - first timeActual: ${firstTimeActual}`);
+          console.log(`[TEST002] Raw data - last timeActual: ${lastTimeActual}`);
+          console.log(`[TEST002] Current time (now): ${new Date(now).toLocaleTimeString()}`);
+          
+          if (firstTimeActual && lastTimeActual) {
+            const firstTime = new Date(firstTimeActual).getTime();
+            const lastTime = new Date(lastTimeActual).getTime();
+            const gameDuration = lastTime - firstTime;
+            
+            console.log(`[TEST002] firstTime parsed: ${new Date(firstTime).toLocaleTimeString()}`);
+            console.log(`[TEST002] lastTime parsed: ${new Date(lastTime).toLocaleTimeString()}`);
+            
+            // Map NBA timestamps to a timeline starting from NOW
+            // Each state's timestamp = now + (time since game start)
+            data.states.forEach((item, index) => {
+              const actionTime = new Date(item.timeActual).getTime();
+              const offsetFromStart = actionTime - firstTime;
+              const timestamp = now + offsetFromStart;
+              
+              // Debug first and last
+              if (index === 0 || index === data.states.length - 1) {
+                console.log(`[TEST002] State ${index}: actionTime=${new Date(actionTime).toLocaleTimeString()}, offset=${(offsetFromStart/1000).toFixed(1)}s, mapped=${new Date(timestamp).toLocaleTimeString()}`);
+              }
+              
+              stateQueueRef.current.push({ state: item.state, timestamp });
+            });
+            
+            // Set initial sync anchor to start playing from the beginning
+            setSyncAnchor({
+              nbaTimestamp: now, // First state starts "now"
+              realWorldTime: now
+            });
+            
+            console.log(`[TEST002] Loaded ${data.states.length} states using REAL NBA timestamps`);
+            console.log(`[TEST002] Game duration: ${(gameDuration/1000/60).toFixed(1)} minutes`);
+            console.log(`[TEST002] First state at: ${new Date(now).toLocaleTimeString()}`);
+            console.log(`[TEST002] Last state at: ${new Date(now + gameDuration).toLocaleTimeString()}`);
+            console.log(`[TEST002] Queue first timestamp: ${new Date(stateQueueRef.current[0].timestamp).toLocaleTimeString()}`);
+            console.log(`[TEST002] Queue last timestamp: ${new Date(stateQueueRef.current[stateQueueRef.current.length - 1].timestamp).toLocaleTimeString()}`);
+            console.log(`[TEST002] Auto-playing from start...`);
+          } else {
+            console.warn('[TEST002] No timeActual found, using fallback spacing');
+            const baseTime = now;
+            const timePerState = 900000 / data.states.length;
+            data.states.forEach((item, index) => {
+              const timestamp = baseTime + (index * timePerState);
+              stateQueueRef.current.push({ state: item.state, timestamp });
+            });
+            
+            setSyncAnchor({
+              nbaTimestamp: now,
+              realWorldTime: now
+            });
+          }
+          
+          // Set the first state as the starting point
+          const firstState = data.states[0];
+          setLiveState(firstState.state || firstState);
+          setLiveUpdateCount(1);
+        }
+        setError(null);
+      } catch (err) {
+        console.error('[TEST002] Error loading states:', err);
+        if (active) setError("Failed to load game data");
+      }
+    }
+    
     async function load() {
       try {
         const url = isTestGame
@@ -241,21 +374,31 @@ export default function GameViewPage() {
         if (active) setError("Failed to fetch live update");
       }
     }
-    load();
-    // Only auto-refresh for non-test games
-    const timer = isTestGame ? null : setInterval(load, 1500);
+    
+    // For TEST002, load all states once
+    if (isTest002) {
+      loadAll();
+    } else {
+      // For other games, poll normally
+      load();
+      const timer = isTestGame ? null : setInterval(load, 1500);
+      return () => {
+        active = false;
+        if (timer) clearInterval(timer);
+      };
+    }
+    
     return () => {
       active = false;
-      if (timer) clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, testGameTimestamp, isTestGame]);
 
-  // Process delayed state based on stream game clock
+  // Process delayed state based on sync anchor
   useEffect(() => {
     const interval = setInterval(() => {
-      if (!streamGameClock) {
-        // If no stream clock set, use most recent state
+      if (!syncAnchor) {
+        // If no sync, use most recent state
         if (stateQueueRef.current.length > 0) {
           const latestState = stateQueueRef.current[stateQueueRef.current.length - 1].state;
           if (!delayedState || JSON.stringify(latestState) !== JSON.stringify(delayedState)) {
@@ -267,22 +410,40 @@ export default function GameViewPage() {
         return;
       }
 
-      // Find state matching stream clock
-      const matchedState = findStateByGameClock(streamGameClock);
+      // Calculate how much real-world time has passed since sync
+      const now = Date.now();
+      const elapsedSinceSync = now - syncAnchor.realWorldTime;
+      
+      // Calculate target NBA timestamp: anchor + elapsed time - manual adjustment
+      // Manual adjustment adds delay (positive = show older data)
+      const targetNbaTimestamp = syncAnchor.nbaTimestamp + elapsedSinceSync - (manualDelayAdjustment * 1000);
+      
+      // For live games: don't go beyond the latest state we have
+      const latestAvailableTimestamp = stateQueueRef.current.length > 0 
+        ? stateQueueRef.current[stateQueueRef.current.length - 1].timestamp 
+        : now;
+      const clampedTarget = Math.min(targetNbaTimestamp, latestAvailableTimestamp);
+      
+      // Find state closest to target NBA timestamp
+      const matchedState = findStateByTimestamp(clampedTarget);
       
       if (matchedState && (!delayedState || JSON.stringify(matchedState) !== JSON.stringify(delayedState))) {
         setDelayedState(matchedState);
         setState(matchedState);
         setDelayedUpdateCount((prev) => prev + 1);
         
+        // Detect new shots for prediction system
+        detectNewShot(matchedState);
+        
+        const isClamped = clampedTarget !== targetNbaTimestamp;
         console.log(
-          `[DELAYED] Showing state for game clock ${streamGameClock} (matched: ${matchedState.clock})`
+          `[PROGRESS] Q${matchedState.period} ${formatClock(matchedState.clock || '')} | Elapsed: ${(elapsedSinceSync/1000).toFixed(1)}s | Anchor: ${new Date(syncAnchor.nbaTimestamp).toLocaleTimeString()} | Target: ${new Date(clampedTarget).toLocaleTimeString()}${isClamped ? ' (clamped)' : ''}`
         );
       }
     }, 100);
 
     return () => clearInterval(interval);
-  }, [streamGameClock, delayedState, delayedUpdateCount]);
+  }, [syncAnchor, delayedState, delayedUpdateCount, manualDelayAdjustment]);
 
   function registerPrediction(
     label: PlayerLabel | undefined,
@@ -317,21 +478,12 @@ export default function GameViewPage() {
 
     lastProcessedShotRef.current = shotId;
 
-    // Shot detected in live data NOW
-    // Calculate popup delay based on clock difference
-    let popupDelay = 0;
-    if (streamGameClock && gameState.clock) {
-      const liveClockSeconds = clockToSeconds(gameState.clock);
-      const streamClockSeconds = clockToSeconds(streamGameClock);
-      const clockDiffSeconds = liveClockSeconds - streamClockSeconds;
-      // Show popup 3 seconds before the shot appears on stream
-      popupDelay = Math.max(0, (clockDiffSeconds - 3) * 1000);
-    }
+    // For synced games (TEST002 or live with sync), show popup immediately with 3s countdown
+    // The shot is already appearing at the right time due to the sync system
+    const popupDelay = 0;
 
     console.log(
-      `Shot detected! Live clock: ${gameState.clock}, Stream clock: ${streamGameClock}, Popup delay: ${
-        popupDelay / 1000
-      }s`
+      `Shot detected! Clock: ${gameState.clock}, Showing popup immediately (synced playback)`
     );
 
     setTimeout(() => {
@@ -618,8 +770,8 @@ export default function GameViewPage() {
           .padStart(3, "0")}</div>
 					</div>
 					<div class="card">
-						<div class="label">Period ${liveState.period ?? "-"} • ${
-          liveState.clock ?? "--:--"
+						<div class="label">Quarter ${liveState.period ?? "-"} • ${
+          formatClock(liveState.clock || '')
         }</div>
 						<div class="grid">
 							<div>
@@ -908,6 +1060,16 @@ export default function GameViewPage() {
                 </span>
               </div>
               <div className="flex gap-2">
+                <select
+                  value={streamPeriodInput}
+                  onChange={(e) => setStreamPeriodInput(parseInt(e.target.value))}
+                  className="px-3 py-2 bg-black/50 border border-white/20 rounded text-white text-sm focus:outline-none focus:border-emerald-400"
+                >
+                  <option value="1">Q1</option>
+                  <option value="2">Q2</option>
+                  <option value="3">Q3</option>
+                  <option value="4">Q4</option>
+                </select>
                 <input
                   type="text"
                   placeholder="e.g. 2:55"
@@ -918,7 +1080,39 @@ export default function GameViewPage() {
                 <button
                   onClick={() => {
                     if (streamClockInput) {
-                      setStreamGameClock(streamClockInput);
+                      // Find the state matching the entered clock and period
+                      const match = findStateByGameClock(streamClockInput, streamPeriodInput);
+                      if (match) {
+                        setStreamGameClock(streamClockInput);
+                        setSyncedPeriod(streamPeriodInput);
+                        
+                        // Set sync anchor: the matched state's timestamp and current real-world time
+                        const matchedItem = stateQueueRef.current.find(item => item.state === match.state);
+                        if (matchedItem) {
+                          const now = Date.now();
+                          setSyncAnchor({
+                            nbaTimestamp: matchedItem.timestamp,
+                            realWorldTime: now
+                          });
+                          
+                          // Calculate actual delay for display purposes
+                          const latestTimestamp = stateQueueRef.current[stateQueueRef.current.length - 1].timestamp;
+                          const actualDelay = (latestTimestamp - matchedItem.timestamp) / 1000;
+                          setStreamDelaySeconds(actualDelay);
+                          
+                          console.log(`[SYNC] ===== SYNC DEBUG =====`);
+                          console.log(`[SYNC] Target: Q${streamPeriodInput} ${streamClockInput}`);
+                          console.log(`[SYNC] Matched state: Q${match.state.period} ${formatClock(match.state.clock || '')}`);
+                          console.log(`[SYNC] Matched timestamp: ${new Date(matchedItem.timestamp).toLocaleTimeString()}`);
+                          console.log(`[SYNC] Latest timestamp: ${new Date(latestTimestamp).toLocaleTimeString()}`);
+                          console.log(`[SYNC] Delay from end: ${actualDelay.toFixed(1)}s`);
+                          console.log(`[SYNC] Sync anchor set - will progress from Q${streamPeriodInput} ${streamClockInput}`);
+                          console.log(`[SYNC] As time passes, game will advance relative to your PC time`);
+                          console.log(`[SYNC] ========================`);
+                        }
+                      } else {
+                        console.warn(`[SYNC] No match found for Q${streamPeriodInput} ${streamClockInput}`);
+                      }
                     }
                   }}
                   className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold rounded text-sm transition"
@@ -929,16 +1123,54 @@ export default function GameViewPage() {
               <div className="text-xs opacity-60 mt-2">
                 Enter the game clock showing on your stream (e.g., "4:30" or "2:15")
               </div>
-              {streamGameClock && liveState?.clock && (
-                <div className="text-xs mt-2 space-y-1">
+              {streamGameClock && liveState?.clock && streamDelaySeconds > 0 && (
+                <div className="text-xs mt-2 space-y-2">
                   <div className="text-emerald-300">
-                    ✓ Synced to Q{liveState.period}
+                    ✓ Synced to Q{syncedPeriod} {streamGameClock}
                   </div>
                   <div className="text-white/60">
-                    Live: {liveState.clock} | Stream: {streamGameClock} | ~{Math.abs(clockToSeconds(liveState.clock) - clockToSeconds(streamGameClock))}s game time
+                    Live: Q{liveState.period} {liveState.clock} | Delay: {streamDelaySeconds.toFixed(1)}s
+                  </div>
+                  
+                  {/* Fine-tune delay adjustment */}
+                  <div className="space-y-1 pt-2 border-t border-white/10">
+                    <div className="flex justify-between items-center">
+                      <span className="text-white/60">Add extra delay:</span>
+                      <span className="text-emerald-300 font-mono">+{manualDelayAdjustment.toFixed(1)}s</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="30"
+                      step="0.5"
+                      value={manualDelayAdjustment}
+                      onChange={(e) => {
+                        const adjustment = parseFloat(e.target.value);
+                        setManualDelayAdjustment(adjustment);
+                      }}
+                      className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-emerald-400"
+                    />
+                    <div className="flex justify-between text-[10px] text-white/40">
+                      <span>0s (no extra delay)</span>
+                      <span>+30s</span>
+                    </div>
+                  </div>
+                  
+                  <div className="text-white/40 text-[10px]">
+                    Dashboard auto-tracks behind live using real NBA timestamps
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* Game Clock & Quarter */}
+            <div className="rounded-lg border border-emerald-400/30 bg-gradient-to-r from-emerald-500/10 to-purple-500/10 p-3 text-center">
+              <div className="text-xs uppercase tracking-wide text-white/60 mb-1">
+                {state?.period ? `Quarter ${state.period}` : "Game Time"}
+              </div>
+              <div className="text-2xl font-bold font-mono text-emerald-300">
+                {formatClock(state?.clock || '')}
+              </div>
             </div>
 
             {/* Live Score */}

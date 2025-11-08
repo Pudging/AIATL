@@ -1,6 +1,6 @@
 import axios from 'axios';
 import type { ParsedGameState, SimplifiedGame } from '@/components/types';
-import { TEST_GAME_DATA, TEST_BOXSCORE_DATA, getTestGameDataAtTimestamp } from './testGameData';
+import { TEST_GAME_DATA, TEST_BOXSCORE_DATA, TEST002_GAME_DATA, TEST002_BOXSCORE_DATA, getTestGameDataAtTimestamp } from './testGameData';
 
 const SCOREBOARD_URL = 'https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json';
 const PLAYBYPLAY_URL = (gameId: string) => `https://cdn.nba.com/static/json/liveData/playbyplay/playbyplay_${gameId}.json`;
@@ -17,6 +17,20 @@ export async function fetchPlayByPlay(gameId: string, timestamp?: number): Promi
     return getTestGameDataAtTimestamp(timestamp ?? 6);
   }
   
+  // Use TEST002 to fetch real NBA playoff game data
+  if (gameId.toUpperCase() === 'TEST002') {
+    try {
+      console.log('[NBA API] Fetching TEST002 from NBA API...');
+      const { data } = await axios.get('https://cdn.nba.com/static/json/liveData/playbyplay/playbyplay_0042400121.json', { timeout: 10000 });
+      console.log(`[NBA API] Successfully fetched TEST002 - ${data?.game?.actions?.length || 0} actions`);
+      return data;
+    } catch (error: any) {
+      console.error('[NBA API] Error fetching TEST002 data:', error.message);
+      console.error('[NBA API] Using fallback data with', TEST002_GAME_DATA?.game?.actions?.length || 0, 'actions');
+      return TEST002_GAME_DATA;
+    }
+  }
+  
   try {
     const { data } = await axios.get(PLAYBYPLAY_URL(gameId), { timeout: 10000 });
     return data;
@@ -30,6 +44,17 @@ export async function fetchBoxScore(gameId: string): Promise<any> {
   // Use test data if gameId is TEST001 (case insensitive)
   if (gameId.toUpperCase() === 'TEST001') {
     return TEST_BOXSCORE_DATA;
+  }
+  
+  // Use TEST002 to fetch real NBA playoff boxscore
+  if (gameId.toUpperCase() === 'TEST002') {
+    try {
+      const { data } = await axios.get('https://cdn.nba.com/static/json/liveData/boxscore/boxscore_0042400121.json', { timeout: 10000 });
+      return data;
+    } catch (error) {
+      console.error('Error fetching TEST002 boxscore, using fallback:', error);
+      return TEST002_BOXSCORE_DATA;
+    }
   }
   
   try {
@@ -162,8 +187,8 @@ export function parseGameState(playByPlayJson: any, boxScoreJson?: any): ParsedG
     }
   }
 
-  const period = game.period ?? null;
-  const clock = game.gameClock || lastAction?.clock || '';
+  const period = lastAction?.period ?? game.period ?? null;
+  const clock = lastAction?.clock || game.gameClock || '';
 
   const recentActions = actions.slice(-10).reverse().map((act: any) => ({
     playerName: act.playerNameI || act.playerName,

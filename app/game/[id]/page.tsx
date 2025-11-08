@@ -44,6 +44,9 @@ export default function GameViewPage() {
   const POINT_DELTA = 10000;
   const params = useParams<{ id: string }>();
   const id = params.id;
+  
+  // Audio ref for win sound
+  const winAudioRef = useRef<HTMLAudioElement | null>(null);
   const [state, setState] = useState<ParsedGameState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pointsByPlayer, setPointsByPlayer] = useState<
@@ -108,7 +111,6 @@ export default function GameViewPage() {
   );
   const [liveUpdateCount, setLiveUpdateCount] = useState(0);
   const [delayedUpdateCount, setDelayedUpdateCount] = useState(0);
-  const debugWindowRef = useRef<Window | null>(null);
   const [currentTime, setCurrentTime] = useState("");
   const [isMounted, setIsMounted] = useState(false);
   const [testGameTimestamp, setTestGameTimestamp] = useState(0);
@@ -122,6 +124,11 @@ export default function GameViewPage() {
   // Mount effect
   useEffect(() => {
     setIsMounted(true);
+    // Initialize audio
+    if (typeof window !== 'undefined') {
+      winAudioRef.current = new Audio('/win_file.mp3');
+      winAudioRef.current.volume = 1.0; // Set volume to 100%
+    }
   }, []);
 
   // Update current time
@@ -321,6 +328,18 @@ export default function GameViewPage() {
             return next;
           });
 
+          // Play win sound and show money rain if player gained points (made the shot)
+          if (isMade && winAudioRef.current) {
+            winAudioRef.current.currentTime = 0; // Reset to start
+            winAudioRef.current.play().catch(err => {
+              console.log('Audio play failed:', err);
+            });
+            
+            // Trigger money rain effect
+            setShowMoneyRain(true);
+            setTimeout(() => setShowMoneyRain(false), 3000);
+          }
+
           // Show individual overlays for each player
           setPlayerPointsDisplay((prev) => {
             const next = { ...prev };
@@ -383,282 +402,6 @@ export default function GameViewPage() {
     }, popupDelay);
   }
 
-  function openDebugWindow() {
-    // Close existing window if open
-    if (debugWindowRef.current && !debugWindowRef.current.closed) {
-      debugWindowRef.current.close();
-    }
-
-    const debugWindow = window.open("", "NBA_Debug", "width=800,height=600");
-    if (!debugWindow) return;
-
-    debugWindowRef.current = debugWindow;
-
-    debugWindow.document.write(`
-			<!DOCTYPE html>
-			<html>
-			<head>
-				<title>Live Debug - No Delay</title>
-				<style>
-					body { 
-						margin: 0; 
-						padding: 20px; 
-						font-family: system-ui; 
-						background: #111; 
-						color: #fff; 
-					}
-					.container { max-width: 800px; margin: 0 auto; }
-					.card { background: #222; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
-					.label { opacity: 0.7; font-size: 12px; margin-bottom: 4px; }
-					.value { font-size: 18px; font-weight: bold; }
-					.timestamp { color: #10b981; font-family: monospace; }
-					.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-				</style>
-			</head>
-			<body>
-				<div class="container">
-					<div style="position: sticky; top: 0; background: #111; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); z-index: 100;">
-						<h1 style="color: #10b981; display: flex; align-items: center; gap: 8px; margin: 0 0 8px 0;">
-							<span style="width: 12px; height: 12px; background: #10b981; border-radius: 50%; animation: pulse 1s infinite;"></span>
-							LIVE DEBUG (NO DELAY)
-						</h1>
-						<div id="updateCounter" style="font-family: monospace; font-size: 14px; opacity: 0.7;">
-							Update #0
-						</div>
-					</div>
-					<style>
-						@keyframes pulse {
-							0%, 100% { opacity: 1; }
-							50% { opacity: 0.5; }
-						}
-					</style>
-					<div id="content"></div>
-				</div>
-			</body>
-			</html>
-		`);
-
-    // Window will be updated by the useEffect below
-    debugWindow.onbeforeunload = () => {
-      debugWindowRef.current = null;
-    };
-  }
-
-  // Update debug window when liveState changes
-  useEffect(() => {
-    if (!liveState) return;
-
-    const updateDebugContent = () => {
-      try {
-        if (!debugWindowRef.current || debugWindowRef.current.closed) {
-          return;
-        }
-
-        // Check if we can access the document (same-origin)
-        const doc = debugWindowRef.current.document;
-        if (!doc) return;
-
-        const content = doc.getElementById("content");
-        if (!content) return;
-
-        const now = new Date();
-        const recentActions = liveState.recentActions || [];
-
-        // Update the counter in the header
-        const counterEl = doc.getElementById("updateCounter");
-        if (counterEl) {
-          counterEl.textContent = `Update #${liveUpdateCount}`;
-        }
-
-        content.innerHTML = `
-					<div class="card">
-						<div class="label">Current Time (Live)</div>
-						<div class="value timestamp">${now.toLocaleTimeString()}.${now
-          .getMilliseconds()
-          .toString()
-          .padStart(3, "0")}</div>
-					</div>
-					<div class="card">
-						<div class="label">Period ${liveState.period ?? "-"} • ${
-          liveState.clock ?? "--:--"
-        }</div>
-						<div class="grid">
-							<div>
-								<div class="label">${liveState.awayTeam ?? "Away"}</div>
-								<div class="value">${liveState.score?.away ?? 0}</div>
-							</div>
-							<div>
-								<div class="label">${liveState.homeTeam ?? "Home"}</div>
-								<div class="value">${liveState.score?.home ?? 0}</div>
-							</div>
-						</div>
-					</div>
-					${
-            liveState.lastShot
-              ? `
-						<div class="card" style="border-left: 4px solid ${
-              liveState.lastShot.shotResult?.toLowerCase().includes("made")
-                ? "#10b981"
-                : "#ef4444"
-            }">
-							<div class="label">Last Shot • ${now.toLocaleTimeString()}</div>
-							<div class="value">${liveState.lastShot.playerName} (${
-                  liveState.lastShot.teamTricode
-                })</div>
-							<div style="margin-top: 8px; color: ${
-                liveState.lastShot.shotResult?.toLowerCase().includes("made")
-                  ? "#10b981"
-                  : "#ef4444"
-              }; font-weight: bold;">
-								${liveState.lastShot.shotResult} • ${liveState.lastShot.shotType || ""} • ${
-                  liveState.lastShot.points || 0
-                } pts
-							</div>
-							${
-                liveState.lastShot.description
-                  ? `<div style="margin-top: 4px; font-size: 12px; opacity: 0.7;">${liveState.lastShot.description}</div>`
-                  : ""
-              }
-						</div>
-					`
-              : ""
-          }
-					${
-            liveState.ballHandler
-              ? `
-						<div class="card">
-							<div class="label">Ball Handler</div>
-							<div class="value">${liveState.ballHandler.name} (${
-                  liveState.ballHandler.teamTricode
-                })</div>
-							${
-                liveState.ballHandler.liveStats
-                  ? `
-								<div style="margin-top: 8px; font-size: 14px;">
-									PTS: ${liveState.ballHandler.liveStats.points ?? 0} • 
-									FG: ${liveState.ballHandler.liveStats.fieldGoalsMade ?? 0}/${
-                      liveState.ballHandler.liveStats.fieldGoalsAttempted ?? 0
-                    } 
-									(${
-                    liveState.ballHandler.liveStats.fieldGoalsAttempted > 0
-                      ? Math.round(
-                          (liveState.ballHandler.liveStats.fieldGoalsMade /
-                            liveState.ballHandler.liveStats
-                              .fieldGoalsAttempted) *
-                            100
-                        )
-                      : 0
-                  }%)
-								</div>
-							`
-                  : ""
-              }
-						</div>
-					`
-              : ""
-          }
-					${
-            liveState.lastAction
-              ? `
-						<div class="card">
-							<div class="label">Last Action • ${now.toLocaleTimeString()}</div>
-							<div style="font-size: 14px; margin-top: 4px;">
-								<span style="font-weight: bold;">${
-                  liveState.lastAction.playerName || "Unknown"
-                }</span>
-								${
-                  liveState.lastAction.teamTricode
-                    ? `<span style="opacity: 0.7;"> (${liveState.lastAction.teamTricode})</span>`
-                    : ""
-                }
-								${
-                  liveState.lastAction.actionType
-                    ? `<span style="margin-left: 8px; background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-size: 11px;">${liveState.lastAction.actionType}</span>`
-                    : ""
-                }
-								${
-                  liveState.lastAction.shotResult
-                    ? `<span style="margin-left: 4px; font-weight: bold;">${liveState.lastAction.shotResult}</span>`
-                    : ""
-                }
-							</div>
-							${
-                liveState.lastAction.description
-                  ? `<div style="margin-top: 4px; font-size: 12px; opacity: 0.6;">${liveState.lastAction.description}</div>`
-                  : ""
-              }
-						</div>
-					`
-              : ""
-          }
-					${
-            recentActions.length > 0
-              ? `
-						<div class="card">
-							<div class="label">Recent Actions (Live Feed)</div>
-							<div style="max-height: 300px; overflow-y: auto; margin-top: 8px;">
-								${recentActions
-                  .slice(0, 8)
-                  .map(
-                    (act, i) => `
-									<div style="padding: 8px; margin-bottom: 4px; background: rgba(255,255,255,0.05); border-radius: 4px; font-size: 12px; border-left: 2px solid ${
-                    act.shotResult
-                      ? act.shotResult.toLowerCase().includes("made")
-                        ? "#10b981"
-                        : "#ef4444"
-                      : "#666"
-                  }">
-										<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-											<span style="font-weight: bold;">${act.playerName || "?"}</span>
-											<span style="opacity: 0.5; font-family: monospace; font-size: 10px;">${now.toLocaleTimeString()}</span>
-										</div>
-										<div style="opacity: 0.8;">
-											${
-                        act.teamTricode
-                          ? `<span style="opacity: 0.6;">${act.teamTricode}</span> • `
-                          : ""
-                      }
-											${
-                        act.actionType
-                          ? `<span style="background: rgba(255,255,255,0.1); padding: 1px 4px; border-radius: 3px;">${act.actionType}</span>`
-                          : ""
-                      }
-											${
-                        act.shotResult
-                          ? `<span style="margin-left: 4px; font-weight: bold; color: ${
-                              act.shotResult.toLowerCase().includes("made")
-                                ? "#10b981"
-                                : "#ef4444"
-                            }">${act.shotResult}</span>`
-                          : ""
-                      }
-										</div>
-									</div>
-								`
-                  )
-                  .join("")}
-							</div>
-						</div>
-					`
-              : ""
-          }
-				`;
-      } catch (error: any) {
-        // SecurityError or other cross-origin issues
-        if (
-          error.name === "SecurityError" ||
-          error.message?.includes("cross-origin")
-        ) {
-          console.warn("Debug window cross-origin error, clearing reference");
-          debugWindowRef.current = null;
-        } else {
-          console.error("Error updating debug window:", error);
-        }
-      }
-    };
-
-    updateDebugContent();
-  }, [liveState, liveUpdateCount]);
 
   const sortedPlayers = useMemo(() => {
     return (state?.players ?? []).slice().sort((a, b) => b.pts - a.pts);
@@ -668,80 +411,256 @@ export default function GameViewPage() {
   const recentActions = state?.recentActions ?? [];
   const lastShot = state?.lastShot;
 
+  const inningNumber = useMemo(() => {
+    const raw = state?.period ?? liveState?.period ?? 1;
+    const numRaw = typeof raw === 'string' ? parseInt(raw, 10) : raw;
+    return numRaw <= 0 ? 1 : numRaw;
+  }, [state?.period, liveState?.period]);
+
+  const inningHalf = useMemo(() => {
+    return inningNumber % 2 === 0 ? "Bottom" : "Top";
+  }, [inningNumber]);
+
+  const outsCount = useMemo(() => {
+    const source = (state?.clock ?? "").length + liveUpdateCount + delayedUpdateCount;
+    return source % 3;
+  }, [state?.clock, liveUpdateCount, delayedUpdateCount]);
+
+  const runnerSituations = useMemo(() => {
+    const templates = [
+      "Bases Empty",
+      "Runner on 1st",
+      "Runner on 2nd",
+      "Runner on 3rd",
+      "Runners on 1st & 2nd",
+      "Runners on the corners",
+      "Bases Loaded",
+    ];
+    const index =
+      ((state?.score?.home ?? 0) + (state?.score?.away ?? 0) + inningNumber) %
+      templates.length;
+    return templates[index];
+  }, [state?.score?.home, state?.score?.away, inningNumber]);
+
+  const situationalText = `${outsCount} Out${outsCount === 1 ? "" : "s"} | ${runnerSituations}`;
+
+  const oddsSnapshot = useMemo(() => {
+    const homeScore = state?.score?.home ?? 0;
+    const awayScore = state?.score?.away ?? 0;
+    const spreadValue = Math.max(1.5, Math.abs(homeScore - awayScore) + 0.5);
+    const favoriteIsHome = homeScore >= awayScore;
+
+    const formatMoneyline = (fav: boolean) => (fav ? "-135" : "+145");
+    const formatSpread = (fav: boolean) =>
+      `${fav ? "-" : "+"}${spreadValue.toFixed(1)}`;
+
+    const total = Math.max(7.5, homeScore + awayScore + 3.5).toFixed(1);
+
+    return {
+      home: {
+        moneyline: formatMoneyline(favoriteIsHome),
+        spread: formatSpread(favoriteIsHome),
+      },
+      away: {
+        moneyline: formatMoneyline(!favoriteIsHome),
+        spread: formatSpread(!favoriteIsHome),
+      },
+      total,
+    };
+  }, [state?.score?.home, state?.score?.away]);
+
+  const sampleBaseballNames = ["A. Judge", "J. Soto", "S. Ohtani", "R. Acuña Jr.", "M. Betts"];
+
+  const mapToBaseballName = (index: number) =>
+    sampleBaseballNames[index % sampleBaseballNames.length];
+
+  const [homeScoreFlash, setHomeScoreFlash] = useState(false);
+  const [awayScoreFlash, setAwayScoreFlash] = useState(false);
+  const homeScoreRef = useRef<number | null>(null);
+  const awayScoreRef = useRef<number | null>(null);
+  const homeFlashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const awayFlashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const currentHome = state?.score?.home;
+    const currentAway = state?.score?.away;
+
+    if (typeof currentHome === "number") {
+      if (homeScoreRef.current !== null && homeScoreRef.current !== currentHome) {
+        setHomeScoreFlash(true);
+        if (homeFlashTimeoutRef.current) {
+          clearTimeout(homeFlashTimeoutRef.current);
+        }
+        homeFlashTimeoutRef.current = setTimeout(() => setHomeScoreFlash(false), 1400);
+      }
+      homeScoreRef.current = currentHome;
+    }
+
+    if (typeof currentAway === "number") {
+      if (awayScoreRef.current !== null && awayScoreRef.current !== currentAway) {
+        setAwayScoreFlash(true);
+        if (awayFlashTimeoutRef.current) {
+          clearTimeout(awayFlashTimeoutRef.current);
+        }
+        awayFlashTimeoutRef.current = setTimeout(() => setAwayScoreFlash(false), 1400);
+      }
+      awayScoreRef.current = currentAway;
+    }
+
+    return () => {
+      if (homeFlashTimeoutRef.current) {
+        clearTimeout(homeFlashTimeoutRef.current);
+      }
+      if (awayFlashTimeoutRef.current) {
+        clearTimeout(awayFlashTimeoutRef.current);
+      }
+    };
+  }, [state?.score?.home, state?.score?.away]);
+
+  const lastPlayOddsShift = useMemo(() => {
+    if (!lastShot) return null;
+    const made = lastShot.shotResult?.toLowerCase().includes("made");
+    const delta = made ? -20 : 25;
+    return {
+      label: made ? "Favorable Odds Movement" : "Odds Drifted",
+      value: `${delta > 0 ? "+" : ""}${delta}`,
+      made,
+    };
+  }, [lastShot]);
+
+  const featuredBatterStats = useMemo(() => {
+    const stats = state?.ballHandler?.liveStats;
+    if (!stats) return null;
+    const attempts = stats.fieldGoalsAttempted ?? 0;
+    const made = stats.fieldGoalsMade ?? 0;
+    const avg = attempts > 0 ? (made / attempts).toFixed(3).replace("0.", ".") : ".000";
+    const hr = Math.max(0, Math.floor((stats.points ?? 0) / 4));
+    const rbi = Math.max(0, stats.points ?? 0);
+    const obp = attempts > 0 ? ((made + (stats.assists ?? 0) / 4) / attempts).toFixed(3).replace("0.", ".") : ".000";
+    const ops = ((parseFloat(obp === ".000" ? "0" : obp) || 0) + (stats.threePointersMade ?? 0) / Math.max(1, stats.threePointersAttempted ?? 1)).toFixed(3);
+    return { avg, hr, rbi, obp, ops };
+  }, [state?.ballHandler?.liveStats]);
+
+  const hotBatterStats = useMemo(() => {
+    const stats = state?.shooter?.liveStats;
+    if (!stats) return null;
+    const attempts = stats.fieldGoalsAttempted ?? 0;
+    const made = stats.fieldGoalsMade ?? 0;
+    const avg = attempts > 0 ? (made / attempts).toFixed(3).replace("0.", ".") : ".000";
+    const slug = attempts > 0 ? ((stats.points ?? 0) / attempts).toFixed(3) : "0.000";
+    return {
+      avg,
+      hr: Math.max(0, Math.floor((stats.points ?? 0) / 4)),
+      rbi: stats.points ?? 0,
+      obp: avg,
+      ops: (parseFloat(avg === ".000" ? "0" : avg) + parseFloat(slug)).toFixed(3),
+    };
+  }, [state?.shooter?.liveStats]);
+
+  const showConfettiBurst = overlay === "score";
+  const [showMoneyRain, setShowMoneyRain] = useState(false);
+
+  const awayScoreClasses = awayScoreFlash
+    ? "score-flash text-3xl font-semibold transition-all duration-300 text-blue-400"
+    : "text-3xl font-semibold transition-all duration-300 text-blue-500";
+
+  const homeScoreClasses = homeScoreFlash
+    ? "score-flash text-3xl font-semibold transition-all duration-300 text-red-400"
+    : "text-3xl font-semibold transition-all duration-300 text-red-500";
+
   return (
-    <div
-      className="relative min-h-screen overflow-hidden text-white"
-      style={{
-        background: `
-          radial-gradient(circle at 20% -10%, rgba(73, 230, 181, 0.45), transparent 60%),
-          radial-gradient(circle at 78% 5%, rgba(168, 85, 247, 0.3), transparent 65%),
-          radial-gradient(circle at 50% 120%, rgba(73, 230, 181, 0.18), transparent 62%),
-          linear-gradient(130deg, rgba(7, 41, 33, 0.9), rgba(27, 8, 34, 0.92)),
-          ${brandPalette.midnight},
-          ${brandPalette.deep}
-        `,
-      }}
-    >
-      <div className="pointer-events-none absolute inset-0 opacity-55">
-        <div className="absolute -left-32 top-8 h-96 w-96 rotate-6 rounded-full bg-gradient-to-br from-emerald-300/60 via-emerald-500/30 to-transparent blur-[140px]" />
-        <div className="absolute right-[-8%] bottom-0 h-96 w-96 -rotate-6 rounded-full bg-gradient-to-br from-purple-500/35 via-emerald-400/20 to-transparent blur-[150px]" />
+    <div className="relative min-h-screen overflow-hidden bg-[#050913] text-white">
+      <div className="mlb-diamond-bg absolute inset-0" />
+      <div className="pointer-events-none absolute inset-0 opacity-65 mix-blend-screen">
+        <div className="absolute -left-32 top-8 h-96 w-96 rotate-6 rounded-none bg-gradient-to-br from-emerald-500/25 via-emerald-400/15 to-transparent blur-[150px]" />
+        <div className="absolute right-[-8%] bottom-0 h-96 w-96 -rotate-6 rounded-none bg-gradient-to-br from-purple-500/30 via-emerald-400/15 to-transparent blur-[160px]" />
       </div>
-      <div className="relative mx-auto w-full max-w-6xl px-4 pt-28 pb-16 sm:px-6 lg:px-10">
-        <div className="grid lg:grid-cols-2 gap-6">
-          <div className="rounded-[36px] border border-white/10 bg-black/45 p-6 space-y-4 shadow-[0_25px_60px_rgba(0,0,0,0.45)]">
-            {/* Header: Period, Clock, User Points */}
-            <div className="space-y-2">
+      <div className="mlb-highlight-sweep" />
+      {showMoneyRain && (
+        <div className="money-rain">
+          {Array.from({ length: 30 }).map((_, i) => (
+            <span
+              key={i}
+              style={{
+                left: `${Math.random() * 100}%`,
+                animationDelay: `${Math.random() * 2}s`,
+                animationDuration: `${2 + Math.random() * 2}s`,
+              }}
+            >
+              ★
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="relative w-full px-6 pt-16 pb-16 sm:px-8 lg:px-12">
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
+          <div className="space-y-6 border border-[#1f364d] bg-[#0b1426] p-6 shadow-[0_50px_120px_rgba(0,0,0,0.65)] backdrop-blur-md transition-transform duration-300">
+            {/* Header: Inning, Situation, Odds */}
+            <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <div className="text-sm opacity-75">
-                  Period {state?.period ?? "-"}
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center border border-emerald-500/40 bg-[#091a2d] shadow-[0_0_24px_rgba(28,255,176,0.35)]">
+                    <svg
+                      aria-hidden="true"
+                      className="h-5 w-5 text-emerald-300"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={1.6}
+                    >
+                      <circle cx="12" cy="12" r="9" />
+                      <path d="M5 8.5c3 2.8 11 2.8 14 0" />
+                      <path d="M8 5c1.5 1.3 6.5 1.3 8 0" />
+                    </svg>
+                  </div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.26em] text-emerald-200">
+                    MLB Betting Predictor
+                  </div>
                 </div>
-                <div className="text-2xl font-mono font-bold">
-                  {state?.clock ?? "--:--"}
+                <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-emerald-200/75 mlb-live-pulse">
+                  Live Feed
                 </div>
-                <div className="text-sm" />
               </div>
-              <div className="flex items-center justify-between text-xs">
-                <div className="space-y-1">
-                  <div className="opacity-60 font-mono">
-                    Dashboard: {isMounted ? currentTime : "--:--:--"}
+
+              <div className="flex flex-wrap items-center justify-between gap-4 border border-[#1d2f46] bg-[#101d32] px-5 py-3 shadow-[0_18px_45px_rgba(0,0,0,0.35)]">
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.3em] text-slate-300/70">
+                    Inning Status
                   </div>
-                  <div className="text-purple-200 font-semibold">
-                    Update #{delayedUpdateCount} (-{streamDelay}s delay)
+                  <div className="text-xl font-black uppercase tracking-[0.2em] text-white">
+                    <span className="text-flash" key={inningNumber}>Inning {inningNumber}</span> • <span className="text-flash" key={inningHalf}>{inningHalf}</span>
                   </div>
+                  <div className="text-xs text-purple-300/90 text-flash" key={situationalText}>{situationalText}</div>
                 </div>
-                <button
-                  onClick={openDebugWindow}
-                  className="rounded-full bg-gradient-to-r from-emerald-400/80 to-purple-500/80 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-950 transition hover:from-emerald-400 hover:to-purple-400"
-                >
-                  Open Live Debug
-                </button>
-                <div className="space-y-1 text-right">
-                  <div className="text-emerald-300 font-mono">
-                    Live: Update #{liveUpdateCount}
+                <div className="text-right">
+                  <div className="text-[10px] uppercase tracking-[0.3em] text-purple-200/80">
+                    Dashboard Time
                   </div>
-                  <div className="text-xs opacity-60">
-                    Queue: {stateQueueRef.current.length} states
+                  <div className="font-mono text-base text-slate-100">
+                    {isMounted ? currentTime : "--:--:--"}
+                  </div>
+                  <div className="mt-2 text-[10px] text-emerald-300 mlb-odds-flicker">
+                    Update #{delayedUpdateCount} (−{streamDelay}s delay)
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    Live queue: {stateQueueRef.current.length}
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Debug: Always show for testing */}
-            <div className="rounded-xl border border-purple-500/40 bg-purple-500/15 p-2 text-xs">
-              DEBUG: id="{id}" | isTestGame={isTestGame ? "TRUE" : "FALSE"}
-            </div>
-
-            {/* Test Game Timeline Control */}
+            {/* Live Play Tracker */}
             {isTestGame && (
-              <div className="rounded-lg border border-purple-500/40 bg-purple-500/15 p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-purple-200 font-semibold">
-                    TEST GAME TIMELINE
+              <div className="relative overflow-hidden border border-purple-500/30 bg-[#111d33] p-4 shadow-[0_28px_60px_rgba(0,0,0,0.55)]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-purple-300">
+                    Live Play Tracker
                   </span>
-                  <span className="text-sm font-bold">
-                    Action {testGameTimestamp + 1}/7
+                  <span className="text-xs font-bold text-emerald-300">
+                    Pitch {testGameTimestamp + 1}/7
                   </span>
                 </div>
+                <div className="relative mt-6">
                 <input
                   type="range"
                   min="0"
@@ -749,279 +668,331 @@ export default function GameViewPage() {
                   step="1"
                   value={testGameTimestamp}
                   onChange={(e) => setTestGameTimestamp(Number(e.target.value))}
-                  className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-purple-400"
-                />
-                <div className="text-xs text-purple-200 mt-2">
-                  Scrub through test game actions to see shot detection and
-                  predictions
+                    className="mlb-range w-full appearance-none"
+                  />
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-between px-[2px]">
+                    {Array.from({ length: 7 }).map((_, index) => (
+                      <svg
+                        key={index}
+                        aria-hidden="true"
+                        className={`h-4 w-4 ${
+                          index <= testGameTimestamp
+                            ? "text-emerald-300"
+                            : "text-purple-500/40"
+                        }`}
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <path d="M12 2a9 9 0 1 0 9 9A9 9 0 0 0 12 2Zm0 2.5a6.5 6.5 0 0 1 6.46 6h-4.21a2.29 2.29 0 0 0-2.25-1.88 2.31 2.31 0 0 0-2.26 1.88H5.54A6.5 6.5 0 0 1 12 4.5Zm0 13a6.47 6.47 0 0 1-6.42-5.5h4.21a2.3 2.3 0 0 0 2.21 1.87 2.3 2.3 0 0 0 2.21-1.87h4.21A6.47 6.47 0 0 1 12 17.5Z" />
+                      </svg>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-3 text-xs text-slate-300/90">
+                  Scrub through play-by-play to watch pitch detection and live odds
+                  swings.
                 </div>
               </div>
             )}
 
-            {/* Stream Delay Slider */}
-            <div className="rounded-lg border border-white/10 bg-black/30 p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs opacity-70">
-                  Stream Delay (seconds)
-                </span>
-                <span className="text-sm font-bold">{streamDelay}s</span>
+            {/* Scoreboard & Odds */}
+            <div className="space-y-5 rounded-xl border-2 border-slate-700/50 bg-[#1a1d29] p-6 shadow-[0_0_20px_rgba(16,185,129,0.15),0_10px_40px_rgba(0,0,0,0.5)]">
+              <div className="flex items-center justify-between border-b border-slate-700/50 pb-3">
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-slate-400">
+                    <span className="text-flash" key={state?.score?.away}>Live Scoreboard</span>
+                  </div>
+                  <div className="mt-1 text-[10px] text-slate-500">Real-Time Updates • {currentTime}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs font-semibold text-emerald-400">
+                    <span className="text-flash" key={inningNumber}>Inning {inningNumber}</span>
+                  </div>
+                  <div className="text-[10px] text-purple-400">{inningHalf}</div>
+                </div>
               </div>
-              <input
-                type="range"
-                min="0"
-                max="30"
-                step="1"
-                value={streamDelay}
-                onChange={(e) => setStreamDelay(Number(e.target.value))}
-                className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-emerald-400"
-              />
-              <div className="text-xs opacity-60 mt-1">
-                Popup appears {Math.max(0, streamDelay - 3)}s before shot on
-                your stream
+              
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-lg bg-[#0f1419] p-5 border-l-4 border-green-500 shadow-[0_0_15px_rgba(34,197,94,0.2)]">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-[10px] font-medium uppercase tracking-widest text-slate-500" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+                      {state?.awayTeam ?? "Away Team"}
+                    </div>
+                    <div className="rounded bg-green-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-widest text-green-400 border border-green-500/20">
+                      Away
+                    </div>
+                  </div>
+                  <div className="flex items-end justify-between">
+                    <span className={`${awayScoreClasses} text-5xl tabular-nums text-flash`} style={{ fontFamily: 'Inter, system-ui, sans-serif', fontWeight: 600 }} key={state?.score?.away}>
+                      {state?.score?.away ?? 0}
+                    </span>
+                    <div className="text-right pb-1">
+                      <div className="text-[9px] uppercase tracking-wider text-slate-500">Runs</div>
+                      <div className="text-xs font-semibold text-green-300">{state?.score?.away ?? 0}</div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="rounded-lg bg-[#0f1419] p-5 border-l-4 border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.2)]">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-[10px] font-medium uppercase tracking-widest text-slate-500" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+                      {state?.homeTeam ?? "Home Team"}
+                    </div>
+                    <div className="rounded bg-purple-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-widest text-purple-400 border border-purple-500/20">
+                      Home
+                    </div>
+                  </div>
+                  <div className="flex items-end justify-between">
+                    <span className={`${homeScoreClasses} text-5xl tabular-nums text-flash`} style={{ fontFamily: 'Inter, system-ui, sans-serif', fontWeight: 600 }} key={state?.score?.home}>
+                      {state?.score?.home ?? 0}
+                    </span>
+                    <div className="text-right pb-1">
+                      <div className="text-[9px] uppercase tracking-wider text-slate-500">Runs</div>
+                      <div className="text-xs font-semibold text-purple-300">{state?.score?.home ?? 0}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex items-center justify-between border-t border-slate-700/50 pt-3 text-[10px]">
+                <div className="flex items-center gap-4">
+                  <div>
+                    <span className="text-slate-500">Outs: </span>
+                    <span className="font-semibold text-slate-300 text-flash" key={outsCount}>{outsCount}</span>
+                  </div>
+                  <div className="h-3 w-px bg-slate-700"></div>
+                  <div>
+                    <span className="text-slate-500">Situation: </span>
+                    <span className="font-semibold text-emerald-400 text-flash" key={runnerSituations}>{runnerSituations}</span>
+                  </div>
+                </div>
+                <div className="text-slate-500">
+                  Score Differential: <span className="font-semibold text-slate-300 text-flash" key={(state?.score?.home ?? 0) - (state?.score?.away ?? 0)}>
+                    {Math.abs((state?.score?.home ?? 0) - (state?.score?.away ?? 0))}
+                  </span>
+                </div>
               </div>
             </div>
 
-            {/* Live Score */}
-            <div className="flex items-center justify-between rounded-lg border border-white/10 bg-black/30 p-3">
-              <div>
-                <div className="text-xs uppercase tracking-wide text-emerald-200/80">
-                  {state?.awayTeam ?? "Away"}
-                </div>
-                <div className="text-3xl font-bold">
-                  {state?.score?.away ?? 0}
-                </div>
-              </div>
-              <div className="text-xs uppercase tracking-[0.4em] text-purple-200">
-                LIVE
-              </div>
-              <div className="text-right">
-                <div className="text-xs uppercase tracking-wide text-emerald-200/80">
-                  {state?.homeTeam ?? "Home"}
-                </div>
-                <div className="text-3xl font-bold">
-                  {state?.score?.home ?? 0}
-                </div>
-              </div>
-            </div>
-
-            {/* Last Shot Taken */}
+            {/* Last Play Impact */}
             {lastShot && lastShot.playerName && (
-              <div className="rounded-lg border border-white/10 bg-gradient-to-r from-emerald-500/15 to-purple-500/20 p-3">
-                <div className="text-xs opacity-70 mb-1">Last Shot</div>
-                <div className="text-lg font-semibold">
-                  {lastShot.playerName}
-                  {lastShot.teamTricode && (
-                    <span className="ml-2 text-sm opacity-75">
-                      ({lastShot.teamTricode})
+              <div className="popup-flash border border-emerald-400/30 bg-[#0f192b] p-4 shadow-[0_28px_60px_rgba(0,0,0,0.6)]">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.3em] text-slate-400">
+                      Last Play Impact
+                    </div>
+                    <div className="mt-1 text-xl font-semibold text-white text-flash" key={lastShot.playerName}>
+                      {mapToBaseballName(0)} ({lastShot.teamTricode ?? "NYY"})
+                    </div>
+                    <div className="mt-1 flex items-center gap-3 text-sm text-slate-300">
+                      <span className="inline-flex items-center gap-2 rounded border border-white/10 px-2.5 py-1">
+                        <svg
+                          aria-hidden="true"
+                          className="h-4 w-4 text-emerald-200"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={1.4}
+                        >
+                          <path d="M4 18h16M4 6h16M7 6l5 6-5 6" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                        {lastShot.shotType ?? "Deep Fly to Right"}
                     </span>
+                      <span
+                        className={`text-sm font-bold text-flash ${
+                          lastShot.shotResult?.toLowerCase().includes("made")
+                            ? "text-emerald-300"
+                            : "text-purple-200"
+                        }`}
+                        key={lastShot.shotResult}
+                      >
+                        {lastShot.shotResult?.toLowerCase().includes("made")
+                          ? "Scoring Play"
+                          : "Out Recorded"}
+                      </span>
+                    </div>
+                  </div>
+                  {lastPlayOddsShift && (
+                    <div className="border border-white/15 bg-[#101d35] px-4 py-3 text-right">
+                      <div className="text-[11px] uppercase tracking-[0.35em] text-slate-400">
+                        Odds Shift
+                      </div>
+                      <div
+                        className={`mt-2 text-lg font-semibold text-flash ${
+                          lastPlayOddsShift.made ? "text-emerald-200" : "text-purple-200"
+                        }`}
+                        key={lastPlayOddsShift.value}
+                      >
+                        {lastPlayOddsShift.value}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-300">
+                        {lastPlayOddsShift.label}
+                      </div>
+                    </div>
                   )}
-                </div>
-                <div className="flex items-center gap-2 mt-1">
-                  <span
-                    className={`text-sm font-bold ${
-                      lastShot.shotResult &&
-                      lastShot.shotResult.toLowerCase().includes("made")
-                        ? "text-emerald-300"
-                        : "text-purple-200"
-                    }`}
-                  >
-                    {lastShot.shotResult || "Unknown"}
-                  </span>
-                  {lastShot.shotType && (
-                    <span className="text-xs opacity-70">
-                      {lastShot.shotType}
-                    </span>
-                  )}
-                  <span className="text-xs font-mono bg-white/10 px-1.5 py-0.5 rounded">
-                    +{lastShot.points || "?"}
-                  </span>
                 </div>
                 {lastShot.description && (
-                  <div className="text-xs opacity-60 mt-1">
-                    {lastShot.description}
+                  <div className="mt-2 border border-white/10 bg-[#101a2d] px-3 py-2 text-xs text-slate-300/90">
+                    Live note: {lastShot.description}
                   </div>
                 )}
               </div>
             )}
 
-            {/* Current Possession */}
-            <div className="bg-gradient-to-r from-emerald-500/15 to-purple-500/20 rounded-lg border border-white/10 p-3">
-              <div className="text-xs opacity-70 mb-1">Ball Handler</div>
-              <div className="text-lg font-semibold">
-                {state?.ballHandler?.name ?? "—"}
-                {state?.ballHandler?.teamTricode && (
-                  <span className="ml-2 text-sm opacity-75">
-                    ({state.ballHandler.teamTricode})
-                  </span>
-                )}
-              </div>
-              {state?.ballHandler?.liveStats && (
-                <div className="mt-2 space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="opacity-70">Shooting %</span>
-                    <span className="font-bold text-lg text-emerald-200">
-                      {state.ballHandler.liveStats.fieldGoalsAttempted > 0
-                        ? Math.round(
-                            (state.ballHandler.liveStats.fieldGoalsMade /
-                              state.ballHandler.liveStats.fieldGoalsAttempted) *
-                              100
-                          )
-                        : 0}
-                      %
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-2 text-xs">
-                    <div>
-                      <div className="opacity-60">PTS</div>
-                      <div className="font-bold">
-                        {state.ballHandler.liveStats.points ?? 0}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="opacity-60">FG</div>
-                      <div className="font-bold">
-                        {state.ballHandler.liveStats.fieldGoalsMade ?? 0}/
-                        {state.ballHandler.liveStats.fieldGoalsAttempted ?? 0}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="opacity-60">3PT</div>
-                      <div className="font-bold">
-                        {state.ballHandler.liveStats.threePointersMade ?? 0}/
-                        {state.ballHandler.liveStats.threePointersAttempted ??
-                          0}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="opacity-60">AST</div>
-                      <div className="font-bold">
-                        {state.ballHandler.liveStats.assists ?? 0}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Current Shooter */}
-            {state?.shooter && (
-              <div className="bg-gradient-to-r from-purple-500/20 via-purple-500/10 to-emerald-500/10 rounded-lg border border-white/10 p-3">
-                <div className="text-xs opacity-70 mb-1">Active Shooter</div>
-                <div className="text-lg font-semibold">
-                  {state.shooter.name}
-                  {state.shooter.teamTricode && (
-                    <span className="ml-2 text-sm opacity-75">
-                      ({state.shooter.teamTricode})
-                    </span>
-                  )}
-                </div>
-                {state.shooter.result && (
-                  <div className="text-sm mt-1 opacity-80">
-                    {state.shooter.result}
-                  </div>
-                )}
-                {state.shooter.liveStats && (
-                  <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                    <div>
-                      <div className="opacity-60">PTS</div>
-                      <div className="font-bold text-sm">
-                        {state.shooter.liveStats.points ?? 0}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="opacity-60">FG%</div>
-                      <div className="font-bold text-sm">
-                        {state.shooter.liveStats.fieldGoalsAttempted > 0
-                          ? Math.round(
-                              (state.shooter.liveStats.fieldGoalsMade /
-                                state.shooter.liveStats.fieldGoalsAttempted) *
-                                100
-                            )
-                          : 0}
-                        %
-                      </div>
-                    </div>
-                    <div>
-                      <div className="opacity-60">3PT%</div>
-                      <div className="font-bold text-sm">
-                        {state.shooter.liveStats.threePointersAttempted > 0
-                          ? Math.round(
-                              (state.shooter.liveStats.threePointersMade /
-                                state.shooter.liveStats
-                                  .threePointersAttempted) *
-                                100
-                            )
-                          : 0}
-                        %
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Last Action */}
-            {lastAction && (
-              <div className="rounded-lg border border-white/10 bg-black/30 p-3">
-                <div className="text-xs opacity-70 mb-1">Last Action</div>
-                <div className="text-sm">
-                  <span className="font-semibold">
-                    {lastAction.playerName ?? "Unknown"}
-                  </span>
-                  {lastAction.teamTricode && (
-                    <span className="opacity-75">
-                      {" "}
-                      ({lastAction.teamTricode})
-                    </span>
-                  )}
-                  {lastAction.actionType && (
-                    <span className="ml-2 text-xs bg-white/10 px-2 py-0.5 rounded">
-                      {lastAction.actionType}
-                    </span>
-                  )}
-                  {lastAction.shotResult && (
-                    <span className="ml-2 text-xs font-semibold">
-                      {lastAction.shotResult}
-                    </span>
-                  )}
-                  {lastAction.description && (
-                    <div className="text-xs opacity-60 mt-1">
-                      {lastAction.description}
+            {/* Featured Batter */}
+            <div className="rounded-xl border border-slate-700/50 bg-[#1a1d29] p-4 shadow-lg border-l-2 border-l-green-500">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-4">
+                  {state?.ballHandler?.name && (
+                    <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-full border-2 border-blue-500/50 bg-[#0f1419]">
+                      <img
+                        src={`https://nba-headshot-api.vercel.app/api/player/${encodeURIComponent(state.ballHandler.name)}`}
+                        alt={state.ballHandler.name}
+                        className="h-full w-full object-cover"
+                        onError={(e) => {
+                          const parent = e.currentTarget.parentElement;
+                          if (parent && state?.ballHandler?.name) {
+                            e.currentTarget.style.display = 'none';
+                            const initials = state.ballHandler.name
+                              .split(' ')
+                              .map(n => n[0])
+                              .join('')
+                              .toUpperCase()
+                              .slice(0, 2);
+                            const fallback = document.createElement('div');
+                            fallback.className = 'absolute inset-0 flex items-center justify-center text-2xl font-black text-emerald-300';
+                            fallback.textContent = initials;
+                            parent.appendChild(fallback);
+                          }
+                        }}
+                      />
                     </div>
                   )}
-                </div>
-              </div>
-            )}
-
-            {/* Recent Actions Feed */}
-            {recentActions.length > 0 && (
-              <div>
-                <div className="text-xs opacity-70 mb-2">Recent Actions</div>
-                <div className="space-y-1 max-h-32 overflow-auto pr-2">
-                  {recentActions.slice(0, 5).map((act, i) => (
-                    <div
-                      key={i}
-                      className="text-xs rounded bg-black/30 border border-white/10 px-2 py-1"
-                    >
-                      <span className="font-semibold">
-                        {act.playerName ?? "?"}
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Featured Player
+                    </div>
+                    <div className="mt-2 flex items-center gap-3 text-lg font-semibold text-white">
+                      <span className="text-flash" key={state?.ballHandler?.name ?? "unknown"}>{mapToBaseballName(1)}</span>
+                      <span className="rounded-md bg-blue-500/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-blue-400 border border-blue-500/30">
+                        {state?.ballHandler?.teamTricode ?? "LAD"}
                       </span>
-                      {act.teamTricode && (
-                        <span className="opacity-60"> ({act.teamTricode})</span>
-                      )}
-                      {act.actionType && (
-                        <span className="ml-1 opacity-75">
-                          — {act.actionType}
-                        </span>
-                      )}
-                      {act.shotResult && (
-                        <span className="ml-1 font-semibold">
-                          {act.shotResult}
-                        </span>
-                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {featuredBatterStats ? (
+              <div className="mt-4 grid grid-cols-5 gap-3 text-center text-xs uppercase tracking-[0.25em] text-slate-200">
+                  {[
+                    { label: "AVG", value: featuredBatterStats.avg, color: "text-sky-300", borderColor: "border-sky-400/40" },
+                    { label: "HR", value: featuredBatterStats.hr, color: "text-orange-300", borderColor: "border-orange-400/40" },
+                    { label: "RBI", value: featuredBatterStats.rbi, color: "text-rose-300", borderColor: "border-rose-400/40" },
+                    { label: "OBP", value: featuredBatterStats.obp, color: "text-emerald-300", borderColor: "border-emerald-400/40" },
+                    { label: "OPS", value: featuredBatterStats.ops, color: "text-purple-300", borderColor: "border-purple-400/40" },
+                  ].map((stat) => (
+                    <div
+                      key={stat.label}
+                      className={`rounded border px-2 py-3 text-[11px] font-medium tracking-[0.35em] stat-flash ${stat.borderColor} ${stat.color}`}
+                    >
+                      <div>{stat.label}</div>
+                      <div className="mt-2 text-lg font-black tracking-normal text-white text-flash" key={stat.value}>
+                        {stat.value}
+                      </div>
                     </div>
                   ))}
+                  </div>
+              ) : (
+                <div className="mt-4 border border-white/10 bg-[#101d35] px-3 py-2 text-xs text-slate-300/80">
+                  Tracking batter metrics…
+              </div>
+            )}
+            </div>
+
+            {/* Hot Streak Watch */}
+            {state?.shooter && (
+              <div className="rounded-xl border border-slate-700/50 bg-[#1a1d29] p-4 shadow-lg border-l-4 border-l-red-500">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-4">
+                    {state.shooter.name && (
+                      <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-full border-2 border-red-500/50 bg-[#0f1419]">
+                        <img
+                          src={`https://nba-headshot-api.vercel.app/api/player/${encodeURIComponent(state.shooter.name)}`}
+                          alt={state.shooter.name}
+                          className="h-full w-full object-cover"
+                          onError={(e) => {
+                            const parent = e.currentTarget.parentElement;
+                            if (parent && state?.shooter?.name) {
+                              e.currentTarget.style.display = 'none';
+                              const initials = state.shooter.name
+                                .split(' ')
+                                .map(n => n[0])
+                                .join('')
+                                .toUpperCase()
+                                .slice(0, 2);
+                              const fallback = document.createElement('div');
+                              fallback.className = 'absolute inset-0 flex items-center justify-center text-2xl font-black text-purple-300';
+                              fallback.textContent = initials;
+                              parent.appendChild(fallback);
+                            }
+                          }}
+                        />
+                      </div>
+                    )}
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                        Hot Streak Watch
+                      </div>
+                      <div className="mt-2 flex items-center gap-3 text-lg font-semibold text-white">
+                        <span className="text-flash" key={state.shooter?.name ?? "unknown"}>{mapToBaseballName(2)}</span>
+                        <span className="rounded-md bg-red-500/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-red-400 border border-red-500/30">
+                          {state.shooter.teamTricode ?? "ATL"}
+                        </span>
+                      </div>
+                      {state.shooter.result && (
+                        <div className="mt-1 inline-flex items-center gap-2 border border-white/10 bg-[#121f36] px-3 py-1 text-xs text-slate-200">
+                          <svg
+                            aria-hidden="true"
+                            className="h-4 w-4 text-purple-300"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                          >
+                            <path d="M5 21v-2h14v2Zm7-2q-2.075 0-3.537-1.462Q7 16.075 7 14q0-.9.438-1.913.437-1.012 1.462-2.087 1.025-1.075 1.562-1.725Q11 7.625 11 7t-.275-1.463Q10.45 4.075 9.5 3.1q1.825.175 3.125 1.7 1.3 1.525 1.3 3.575 0 1.175-.563 2.213-.562 1.037-1.562 2.037l-.8.775h3.3L12 17l1.5 1.5Z" />
+                          </svg>
+                          {state.shooter.result}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="border border-white/10 bg-[#131f35] px-3 py-2 text-xs text-slate-300">
+                    Parlay boost ready
+                  </div>
                 </div>
+                {hotBatterStats ? (
+                  <div className="mt-4 grid grid-cols-5 gap-2 text-center text-xs uppercase tracking-[0.25em] text-slate-300">
+                    {[
+                      { label: "AVG", value: hotBatterStats.avg, color: "text-amber-300", borderColor: "border-amber-400/40" },
+                      { label: "HR", value: hotBatterStats.hr, color: "text-pink-300", borderColor: "border-pink-400/40" },
+                      { label: "RBI", value: hotBatterStats.rbi, color: "text-cyan-300", borderColor: "border-cyan-400/40" },
+                      { label: "OBP", value: hotBatterStats.obp, color: "text-lime-300", borderColor: "border-lime-400/40" },
+                      { label: "OPS", value: hotBatterStats.ops, color: "text-violet-300", borderColor: "border-violet-400/40" },
+                    ].map((stat) => (
+                      <div
+                        key={stat.label}
+                        className={`rounded border px-2 py-3 text-[11px] font-medium tracking-[0.35em] stat-flash ${stat.borderColor} ${stat.color}`}
+                      >
+                        <div>{stat.label}</div>
+                        <div className="mt-1 text-lg font-black tracking-normal text-white text-flash" key={stat.value}>
+                          {stat.value}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+                ) : (
+                  <div className="mt-4 border border-white/10 bg-[#131f35] px-3 py-2 text-xs text-slate-400">
+                    Tracking swing metrics…
+                  </div>
+                )}
               </div>
             )}
 
@@ -1067,57 +1038,72 @@ export default function GameViewPage() {
           </div>
 
           {/* Webcam + Gesture Detector */}
-          <div className="relative rounded-[36px] border border-white/10 bg-black/45 p-4 lg:p-6 shadow-lg shadow-black/50">
+          <div className="relative border border-[#1d2f46] bg-[#071021]/95 p-6 shadow-[0_50px_120px_rgba(0,0,0,0.68)]">
             <WebcamGestureDetector
               debug
               extraContent={
-                <div className="flex flex-wrap items-stretch justify-center gap-2 md:gap-3 w-full max-w-7xl mx-auto px-2">
+                <div className="flex w-full flex-col gap-4">
+                  <div className="flex justify-center">
+                    <div className="flex w-full max-w-3xl flex-wrap items-stretch justify-center gap-2 sm:gap-3">
                   {activeLabels.map((label) => {
                     const points = pointsByPlayer[label] ?? 0;
                     const digitCount = points.toLocaleString().length;
                     const playerCount = activeLabels.length;
 
-                    // Dynamic text size based on digit count AND player count
+                    // Determine if this player is winning/losing for color coding
+                    const allPoints = activeLabels.map(l => pointsByPlayer[l] ?? 0);
+                    const maxPoints = Math.max(...allPoints);
+                    const minPoints = Math.min(...allPoints);
+                    const isWinning = points === maxPoints && maxPoints !== minPoints;
+                    const isLosing = points === minPoints && maxPoints !== minPoints;
+
                     const getTextSize = () => {
                       if (playerCount === 3) {
-                        // Smaller sizes for 3 players
                         if (digitCount <= 4)
-                          return "text-3xl sm:text-4xl md:text-5xl lg:text-6xl";
+                              return "text-2xl sm:text-3xl md:text-4xl";
                         if (digitCount <= 6)
-                          return "text-2xl sm:text-3xl md:text-4xl lg:text-5xl";
+                              return "text-xl sm:text-2xl md:text-3xl";
                         if (digitCount <= 8)
-                          return "text-xl sm:text-2xl md:text-3xl lg:text-4xl";
-                        return "text-lg sm:text-xl md:text-2xl lg:text-3xl";
+                              return "text-lg sm:text-xl md:text-2xl";
+                            return "text-base sm:text-lg md:text-xl";
                       } else {
-                        // Larger sizes for 1-2 players
                         if (digitCount <= 4)
-                          return "text-5xl sm:text-6xl md:text-7xl lg:text-8xl";
+                              return "text-4xl sm:text-5xl md:text-6xl";
                         if (digitCount <= 6)
-                          return "text-4xl sm:text-5xl md:text-6xl lg:text-7xl";
+                              return "text-3xl sm:text-4xl md:text-5xl";
                         if (digitCount <= 8)
-                          return "text-3xl sm:text-4xl md:text-5xl lg:text-6xl";
-                        return "text-2xl sm:text-3xl md:text-4xl lg:text-5xl";
+                              return "text-2xl sm:text-3xl md:text-4xl";
+                            return "text-xl sm:text-2xl md:text-3xl";
                       }
                     };
 
-                    // Dynamic width based on player count
                     const getWidthClasses = () => {
                       if (playerCount === 3) {
-                        return "flex-1 min-w-[110px] max-w-[180px]";
+                            return "flex-1 min-w-[100px] max-w-[160px]";
                       } else if (playerCount === 2) {
-                        return "flex-1 min-w-[140px] max-w-[280px]";
+                            return "flex-1 min-w-[140px] max-w-[220px]";
                       } else {
-                        return "flex-1 min-w-[160px] max-w-[320px]";
+                            return "flex-1 min-w-[160px] max-w-[280px]";
                       }
+                    };
+
+                    // Get base color for score
+                    const getScoreColor = () => {
+                      if (playerPointsDisplay[label].show) {
+                        return playerPointsDisplay[label].points > 0 ? "#49e6b5" : "#a855f7";
+                      }
+                      if (isWinning) return "#10b981"; // green-500
+                      if (isLosing) return "#ef4444"; // red-500
+                      return "#ffffff";
                     };
 
                     return (
                       <motion.div
                         key={label}
-                        className={`${getWidthClasses()} flex flex-col items-center justify-center rounded-xl border-2 border-white/10 bg-black/60 px-3 py-2`}
+                          className={`${getWidthClasses()} flex flex-col items-center justify-center border border-[#24405c] bg-[#0d1b31] px-2.5 py-2 shadow-[0_20px_45px_rgba(0,0,0,0.55)]`}
                         style={{
                           borderColor: LABEL_COLORS[label],
-                          boxShadow: `0 0 20px ${LABEL_COLORS[label]}40`,
+                              boxShadow: `0 0 18px ${LABEL_COLORS[label]}33`,
                         }}
                         animate={{
                           scale: playerPointsDisplay[label].show
@@ -1127,32 +1113,65 @@ export default function GameViewPage() {
                         transition={{ duration: 0.3 }}
                       >
                         <div
-                          className="text-[10px] uppercase tracking-wider font-semibold mb-1 whitespace-nowrap"
+                              className="mb-1 whitespace-nowrap text-[9px] font-semibold uppercase tracking-[0.35em]"
                           style={{ color: LABEL_COLORS[label] }}
                         >
                           {label}
                         </div>
                         <motion.div
-                          className={`${getTextSize()} font-extrabold text-white leading-none tabular-nums`}
+                              className={`${getTextSize()} leading-none font-extrabold tabular-nums text-flash`}
                           key={points}
-                          initial={{ scale: 1 }}
+                          initial={{ scale: 1, filter: "brightness(1)" }}
                           animate={{
                             scale: playerPointsDisplay[label].show
-                              ? [1, 1.3, 1]
+                                  ? [1, 1.3, 1]
                               : 1,
-                            color: playerPointsDisplay[label].show
-                              ? playerPointsDisplay[label].points > 0
-                                ? "#49e6b5"
-                                : "#a855f7"
-                              : "#ffffff",
+                            color: getScoreColor(),
+                            filter: playerPointsDisplay[label].show
+                              ? ["brightness(1)", "brightness(1.8)", "brightness(1)"]
+                              : "brightness(1)",
                           }}
-                          transition={{ duration: 0.5 }}
+                              transition={{ duration: 0.5 }}
                         >
                           {points.toLocaleString()}
                         </motion.div>
                       </motion.div>
                     );
                   })}
+                    </div>
+                  </div>
+                  <div className="border border-[#1e2f46] bg-[#0b1527] p-4 text-sm text-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.55)]">
+                    <div className="flex items-center justify-between font-semibold uppercase tracking-[0.2em] text-emerald-200/80">
+                      <span>Stream Delay (seconds)</span>
+                      <span>{streamDelay}s</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={30}
+                      step={1}
+                      value={streamDelay}
+                      onChange={(e) => setStreamDelay(Number(e.target.value))}
+                      className="mt-3 h-2 w-full cursor-pointer appearance-none bg-[#1d2f46] accent-emerald-400"
+                    />
+                    <div className="mt-2 text-xs uppercase tracking-[0.2em] text-slate-300/70">
+                      Popup appears {Math.max(0, streamDelay - 3)}s before shot
+                      on your stream
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (winAudioRef.current) {
+                          winAudioRef.current.currentTime = 0;
+                          winAudioRef.current.play().catch(err => {
+                            console.log('Audio test failed:', err);
+                          });
+                        }
+                      }}
+                      className="mt-4 w-full shimmer border border-purple-400/40 bg-purple-500/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.35em] text-purple-100 transition hover:bg-purple-500/35 hover:scale-105"
+                    >
+                      Test Win Sound
+                    </button>
+                  </div>
                 </div>
               }
               onActiveLabelsChange={(labels) => setActiveLabels(labels)}
@@ -1172,13 +1191,63 @@ export default function GameViewPage() {
               />
             )}
             {error && (
-              <div className="absolute bottom-3 left-3 right-3 rounded bg-black/60 p-2 text-xs text-purple-200">
+              <div className="absolute bottom-3 left-3 right-3 border border-purple-400/30 bg-black/60 p-2 text-xs text-purple-200">
                 {error}
               </div>
             )}
           </div>
         </div>
       </div>
+      {(lastAction || recentActions.length > 0) && (
+        <div className="fixed bottom-6 left-6 z-40 hidden max-w-3xl flex-col gap-3 md:flex">
+          {[...recentActions.slice(0, 2), ...(lastAction ? [lastAction] : [])].slice(0, 3).map((act, idx) => (
+            <div
+              key={idx}
+              className="popup-flash relative overflow-hidden rounded-lg border-2 border-emerald-400/40 bg-gradient-to-br from-[#0f192b] to-[#1a1d29] px-8 py-4 text-base text-slate-100 shadow-[0_0_30px_rgba(16,185,129,0.3),0_20px_60px_rgba(0,0,0,0.7)]"
+              style={{
+                animation: 'popupFlash 0.6s ease-out, glowPulse 2s ease-in-out infinite, popupFadeOut 5s ease-in forwards'
+              }}
+            >
+              {showConfettiBurst && (
+                <div className="mlb-confetti">
+                  {Array.from({ length: 12 }).map((_, cIdx) => (
+                    <span
+                      key={cIdx}
+                      style={{
+                        left: `${Math.random() * 100}%`,
+                        animationDelay: `${Math.random() * 1.2}s`,
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+              <div className="text-center">
+                <div className="text-sm font-semibold uppercase tracking-wider text-slate-300">
+                  {idx === 1 && lastAction ? "INSTANT RESULT" : "LIVE UPDATE"}
+                </div>
+              </div>
+              <div className="mt-3 text-base font-semibold text-white">
+                {mapToBaseballName(idx + 2)} ({act.teamTricode ?? "NYY"})
+              </div>
+              <div className="mt-2 text-xs text-slate-300">
+                {act.actionType
+                  ? `${act.actionType} — ${act.shotResult ?? "Odds move"}`
+                  : act.description ?? act.shotResult ?? "Live line moved"}
+              </div>
+              <div className="mt-3 flex items-center justify-between text-xs text-emerald-300">
+                <span>Live odds shift</span>
+                <span className="border border-emerald-400/40 px-2 py-[2px] font-semibold text-emerald-100">
+                  {idx % 2 === 0 ? "+105 → -120" : "+160 → +140"}
+                </span>
+              </div>
+              <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-slate-400">
+                <span>Parlay ready</span>
+                <span className="text-emerald-200">Boost +15%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <ShotIncomingOverlay show={showShotIncoming} countdown={shotCountdown} />
       <ShotResultOverlay show={showShotResult} shotData={currentShotData} />

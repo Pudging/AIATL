@@ -11,6 +11,7 @@ import ShotIncomingOverlay from "@/components/ShotIncomingOverlay";
 import ShotResultOverlay from "@/components/ShotResultOverlay";
 import PointsEarnedOverlay from "@/components/PointsEarnedOverlay";
 import MultiPlayerPointsOverlay from "@/components/MultiPlayerPointsOverlay";
+import TutorialOverlay from "@/components/TutorialOverlay";
 import { Howl } from "howler";
 import playerStats from "@/player_stats.json";
 
@@ -561,6 +562,7 @@ export default function GameViewPage() {
   const [activeShotOdds, setActiveShotOdds] = useState<ShotOddsInfo | null>(
     null
   );
+  const [showTutorial, setShowTutorial] = useState(false);
   const isTestGame = id?.toUpperCase() === "TEST001";
   const isTest002 = id?.toUpperCase() === "TEST002";
 
@@ -1773,12 +1775,24 @@ export default function GameViewPage() {
                     Update #{delayedUpdateCount} (-{streamDelay}s delay)
                   </div>
                 </div>
-                <button
-                  onClick={openDebugWindow}
-                  className="rounded-full bg-gradient-to-r from-emerald-400/80 to-purple-500/80 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-950 transition hover:from-emerald-400 hover:to-purple-400"
-                >
-                  Open Live Debug
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowTutorial(true)}
+                    className="rounded-full bg-gradient-to-r from-blue-400/80 to-emerald-500/80 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.3em] text-blue-950 transition hover:from-blue-400 hover:to-emerald-400 flex items-center gap-1.5"
+                    title="Tutorial"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Tutorial
+                  </button>
+                  <button
+                    onClick={openDebugWindow}
+                    className="rounded-full bg-gradient-to-r from-emerald-400/80 to-purple-500/80 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-950 transition hover:from-emerald-400 hover:to-purple-400"
+                  >
+                    Open Live Debug
+                  </button>
+                </div>
                 <div className="space-y-1 text-right">
                   <div className="text-emerald-300 font-mono">
                     Live: Update #{liveUpdateCount}
@@ -2684,6 +2698,7 @@ export default function GameViewPage() {
         points={pointsEarned}
         label={pointsEarnedLabel ?? undefined}
       />
+      <TutorialOverlay show={showTutorial} onClose={() => setShowTutorial(false)} />
     </div>
   );
 }

@@ -45,6 +45,10 @@ export default function GameViewPage() {
   const POINT_DELTA = 1000;
   const params = useParams<{ id: string }>();
   const id = params.id;
+  
+  // Audio ref for win sound
+  const winAudioRef = useRef<HTMLAudioElement | null>(null);
+  const debugWindowRef = useRef<Window | null>(null);
   const [state, setState] = useState<ParsedGameState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pointsByPlayer, setPointsByPlayer] = useState<
@@ -89,6 +93,8 @@ export default function GameViewPage() {
   const [streamPeriodInput, setStreamPeriodInput] = useState<number>(1);
   const [syncedPeriod, setSyncedPeriod] = useState<number>(1);
   const [streamDelaySeconds, setStreamDelaySeconds] = useState<number>(0);
+  const [streamDelay, setStreamDelay] = useState<number>(3);
+  const [showMoneyRain, setShowMoneyRain] = useState(false);
   const [manualDelayAdjustment, setManualDelayAdjustment] = useState<number>(0);
   const [syncAnchor, setSyncAnchor] = useState<{
     nbaTimestamp: number;
@@ -173,7 +179,6 @@ export default function GameViewPage() {
   );
   const [liveUpdateCount, setLiveUpdateCount] = useState(0);
   const [delayedUpdateCount, setDelayedUpdateCount] = useState(0);
-  const debugWindowRef = useRef<Window | null>(null);
   const [currentTime, setCurrentTime] = useState("");
   const [isMounted, setIsMounted] = useState(false);
   const [testGameTimestamp, setTestGameTimestamp] = useState(0);
@@ -319,6 +324,11 @@ export default function GameViewPage() {
   // Mount effect
   useEffect(() => {
     setIsMounted(true);
+    // Initialize audio
+    if (typeof window !== 'undefined') {
+      winAudioRef.current = new Audio('/win_file.mp3');
+      winAudioRef.current.volume = 1.0; // Set volume to 100%
+    }
   }, []);
 
   // Fetch or create game session for join code and players
@@ -333,8 +343,10 @@ export default function GameViewPage() {
         const data = await res.json();
         if (cancelled) return;
         if (res.ok) {
+          console.log("[JOIN CODE] Fetched session data:", data);
           setGameSessionId(data.id ?? null);
           setJoinCode(data.joinCode ?? null);
+          console.log("[JOIN CODE] Set join code to:", data.joinCode);
           const next: Record<
             number,
             { id: string; name?: string; image?: string } | null
@@ -347,8 +359,12 @@ export default function GameViewPage() {
             };
           });
           setPlayersBySlot(next);
+        } else {
+          console.error("[JOIN CODE] API error:", data);
         }
-      } catch {}
+      } catch (err) {
+        console.error("[JOIN CODE] Fetch error:", err);
+      }
     }
     fetchSession();
     timer = setInterval(fetchSession, 3000);
@@ -815,6 +831,18 @@ export default function GameViewPage() {
             return next;
           });
 
+          // Play win sound and show money rain if player gained points (made the shot)
+          if (isMade && winAudioRef.current) {
+            winAudioRef.current.currentTime = 0; // Reset to start
+            winAudioRef.current.play().catch(err => {
+              console.log('Audio play failed:', err);
+            });
+            
+            // Trigger money rain effect
+            setShowMoneyRain(true);
+            setTimeout(() => setShowMoneyRain(false), 3000);
+          }
+
           // Show individual overlays for each player with their specific delta
           setPlayerPointsDisplay((prev) => {
             const next = { ...prev };
@@ -1052,9 +1080,9 @@ export default function GameViewPage() {
           .padStart(3, "0")}</div>
 					</div>
 					<div class="card">
-						<div class="label">Quarter ${liveState.period ?? "-"} • ${formatClock(
-          liveState.clock || ""
-        )}</div>
+						<div class="label">Period ${liveState.period ?? "-"} • ${
+          formatClock(liveState.clock ?? "")
+        }</div>
 						<div class="grid">
 							<div>
 								<div class="label">${liveState.awayTeam ?? "Away"}</div>
@@ -1233,43 +1261,46 @@ export default function GameViewPage() {
     updateDebugContent();
   }, [liveState, liveUpdateCount]);
 
-  const sortedPlayers = useMemo(() => {
-    return (state?.players ?? []).slice().sort((a, b) => b.pts - a.pts);
-  }, [state]);
-
-  const lastAction = state?.lastAction;
-  const recentActions = state?.recentActions ?? [];
-  const lastShot = state?.lastShot;
+  const homeScoreClasses = "text-3xl font-semibold transition-all duration-300 text-red-500";
 
   return (
-    <div
-      className="relative min-h-screen overflow-hidden text-white"
-      style={{
-        background: `
-          radial-gradient(circle at 20% -10%, rgba(73, 230, 181, 0.45), transparent 60%),
-          radial-gradient(circle at 78% 5%, rgba(168, 85, 247, 0.3), transparent 65%),
-          radial-gradient(circle at 50% 120%, rgba(73, 230, 181, 0.18), transparent 62%),
-          linear-gradient(130deg, rgba(7, 41, 33, 0.9), rgba(27, 8, 34, 0.92)),
-          ${brandPalette.midnight},
-          ${brandPalette.deep}
-        `,
-      }}
-    >
-      <div className="pointer-events-none absolute inset-0 opacity-55">
-        <div className="absolute -left-32 top-8 h-96 w-96 rotate-6 rounded-full bg-gradient-to-br from-emerald-300/60 via-emerald-500/30 to-transparent blur-[140px]" />
-        <div className="absolute right-[-8%] bottom-0 h-96 w-96 -rotate-6 rounded-full bg-gradient-to-br from-purple-500/35 via-emerald-400/20 to-transparent blur-[150px]" />
+    <div className="relative min-h-screen overflow-hidden bg-[#050913] text-white">
+      <div className="mlb-diamond-bg absolute inset-0" />
+      <div className="pointer-events-none absolute inset-0 opacity-65 mix-blend-screen">
+        <div className="absolute -left-32 top-8 h-96 w-96 rotate-6 rounded-none bg-gradient-to-br from-emerald-500/25 via-emerald-400/15 to-transparent blur-[150px]" />
+        <div className="absolute right-[-8%] bottom-0 h-96 w-96 -rotate-6 rounded-none bg-gradient-to-br from-purple-500/30 via-emerald-400/15 to-transparent blur-[160px]" />
       </div>
-      <div className="relative mx-auto w-full max-w-6xl px-4 pt-28 pb-16 sm:px-6 lg:px-10">
-        <div className="grid lg:grid-cols-2 gap-6">
-          <div className="rounded-[36px] border border-white/10 bg-black/45 p-6 space-y-4 shadow-[0_25px_60px_rgba(0,0,0,0.45)]">
-            {/* Header: Period, Clock, User Points */}
-            <div className="space-y-2">
+      <div className="mlb-highlight-sweep" />
+      {showMoneyRain && (
+        <div className="money-rain">
+          {Array.from({ length: 30 }).map((_, i) => (
+            <span
+              key={i}
+              style={{
+                left: `${Math.random() * 100}%`,
+                animationDelay: `${Math.random() * 2}s`,
+                animationDuration: `${2 + Math.random() * 2}s`,
+              }}
+            >
+              ★
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="relative w-full px-6 pt-16 pb-16 sm:px-8 lg:px-12">
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
+          <div className="space-y-6 border border-[#1f364d] bg-[#0b1426] p-6 shadow-[0_50px_120px_rgba(0,0,0,0.65)] backdrop-blur-md transition-transform duration-300">
+            {/* Header: Inning, Situation, Odds */}
+            <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="text-sm opacity-75">
                   Period {state?.period ?? "-"}
                 </div>
-                <div className="text-2xl font-mono font-bold">
-                  {state?.clock ?? "--:--"}
+                <div className="text-center">
+                  <div className="text-xs opacity-60 mb-1">Clock</div>
+                  <div className="text-2xl font-mono font-bold">
+                    {formatClock(state?.clock ?? "")}
+                  </div>
                 </div>
                 <div className="text-sm" />
               </div>
@@ -1279,10 +1310,7 @@ export default function GameViewPage() {
                     Dashboard: {isMounted ? currentTime : "--:--:--"}
                   </div>
                   <div className="text-purple-200 font-semibold">
-                    Update #{delayedUpdateCount}{" "}
-                    {streamGameClock
-                      ? `(Stream: ${streamGameClock})`
-                      : "(Live)"}
+                    Update #{delayedUpdateCount} (-{streamDelay}s delay)
                   </div>
                 </div>
                 <button
@@ -1295,29 +1323,75 @@ export default function GameViewPage() {
                   <div className="text-emerald-300 font-mono">
                     Live: Update #{liveUpdateCount}
                   </div>
-                  <div className="text-xs opacity-60">
-                    Queue: {stateQueueRef.current.length} states
+                  <div className="text-xs text-purple-300/90 text-flash">
+                    {state?.lastShot?.shotResult || "Live"}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] uppercase tracking-[0.3em] text-purple-200/80">
+                    Dashboard Time
+                  </div>
+                  <div className="font-mono text-base text-slate-100">
+                    {isMounted ? currentTime : "--:--:--"}
+                  </div>
+                  <div className="mt-2 text-[10px] text-emerald-300 mlb-odds-flicker">
+                    Update #{delayedUpdateCount} (−{streamDelay}s delay)
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    Live queue: {stateQueueRef.current.length}
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Debug: Always show for testing */}
-            <div className="rounded-xl border border-purple-500/40 bg-purple-500/15 p-2 text-xs">
-              DEBUG: id="{id}" | isTestGame={isTestGame ? "TRUE" : "FALSE"}
+            {/* Join Code Display */}
+            <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-4">
+              <div className="text-xs uppercase tracking-[0.3em] text-emerald-200/80 mb-2">
+                Join Code
+              </div>
+              {joinCode ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <div className="text-2xl font-mono font-bold text-emerald-300">
+                      {joinCode}
+                    </div>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(joinCode);
+                          // You could add a toast notification here
+                        } catch (err) {
+                          console.error("Failed to copy:", err);
+                        }
+                      }}
+                      className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-emerald-200 hover:bg-emerald-500/30 transition"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <div className="mt-2 text-xs text-emerald-200/60">
+                    Share this code with players to join the game
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm text-emerald-200/60">
+                  Loading join code...
+                </div>
+              )}
             </div>
 
-            {/* Test Game Timeline Control */}
+            {/* Live Play Tracker */}
             {isTestGame && (
-              <div className="rounded-lg border border-purple-500/40 bg-purple-500/15 p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-purple-200 font-semibold">
-                    TEST GAME TIMELINE
+              <div className="relative overflow-hidden border border-purple-500/30 bg-[#111d33] p-4 shadow-[0_28px_60px_rgba(0,0,0,0.55)]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-purple-300">
+                    Live Play Tracker
                   </span>
-                  <span className="text-sm font-bold">
-                    Action {testGameTimestamp + 1}/7
+                  <span className="text-xs font-bold text-emerald-300">
+                    Pitch {testGameTimestamp + 1}/7
                   </span>
                 </div>
+                <div className="relative mt-6">
                 <input
                   type="range"
                   min="0"
@@ -1325,182 +1399,120 @@ export default function GameViewPage() {
                   step="1"
                   value={testGameTimestamp}
                   onChange={(e) => setTestGameTimestamp(Number(e.target.value))}
-                  className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-purple-400"
-                />
-                <div className="text-xs text-purple-200 mt-2">
-                  Scrub through test game actions to see shot detection and
-                  predictions
+                    className="mlb-range w-full appearance-none"
+                  />
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-between px-[2px]">
+                    {Array.from({ length: 7 }).map((_, index) => (
+                      <svg
+                        key={index}
+                        aria-hidden="true"
+                        className={`h-4 w-4 ${
+                          index <= testGameTimestamp
+                            ? "text-emerald-300"
+                            : "text-purple-500/40"
+                        }`}
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <path d="M12 2a9 9 0 1 0 9 9A9 9 0 0 0 12 2Zm0 2.5a6.5 6.5 0 0 1 6.46 6h-4.21a2.29 2.29 0 0 0-2.25-1.88 2.31 2.31 0 0 0-2.26 1.88H5.54A6.5 6.5 0 0 1 12 4.5Zm0 13a6.47 6.47 0 0 1-6.42-5.5h4.21a2.3 2.3 0 0 0 2.21 1.87 2.3 2.3 0 0 0 2.21-1.87h4.21A6.47 6.47 0 0 1 12 17.5Z" />
+                      </svg>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-3 text-xs text-slate-300/90">
+                  Scrub through play-by-play to watch pitch detection and live odds
+                  swings.
                 </div>
               </div>
             )}
 
-            {/* Stream Clock Sync */}
+            {/* Stream Delay Slider */}
             <div className="rounded-lg border border-white/10 bg-black/30 p-3">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs opacity-70">Stream Game Clock</span>
-                <span className="text-sm font-bold">
-                  {streamGameClock || "Not Set"}
+                <span className="text-xs opacity-70">
+                  Stream Delay (seconds)
                 </span>
+                <span className="text-sm font-bold">{streamDelay}s</span>
               </div>
-              <div className="flex gap-2">
-                <select
-                  value={streamPeriodInput}
-                  onChange={(e) =>
-                    setStreamPeriodInput(parseInt(e.target.value))
-                  }
-                  className="px-3 py-2 bg-black/50 border border-white/20 rounded text-white text-sm focus:outline-none focus:border-emerald-400"
-                >
-                  <option value="1">Q1</option>
-                  <option value="2">Q2</option>
-                  <option value="3">Q3</option>
-                  <option value="4">Q4</option>
-                </select>
-                <input
-                  type="text"
-                  placeholder="e.g. 2:55"
-                  value={streamClockInput}
-                  onChange={(e) => setStreamClockInput(e.target.value)}
-                  className="flex-1 px-3 py-2 bg-black/50 border border-white/20 rounded text-white text-sm focus:outline-none focus:border-emerald-400"
-                />
-                <button
-                  onClick={() => {
-                    if (streamClockInput) {
-                      // Find the state matching the entered clock and period
-                      const match = findStateByGameClock(
-                        streamClockInput,
-                        streamPeriodInput
-                      );
-                      if (match) {
-                        setStreamGameClock(streamClockInput);
-                        setSyncedPeriod(streamPeriodInput);
-
-                        // Set sync anchor: the matched state's timestamp and current real-world time
-                        const matchedItem = stateQueueRef.current.find(
-                          (item) => item.state === match.state
-                        );
-                        if (matchedItem) {
-                          const now = Date.now();
-                          setSyncAnchor({
-                            nbaTimestamp: matchedItem.timestamp,
-                            realWorldTime: now,
-                          });
-
-                          // Calculate actual delay for display purposes
-                          const last =
-                            stateQueueRef.current[
-                              stateQueueRef.current.length - 1
-                            ];
-                          const latestTimestamp = last
-                            ? last.timestamp
-                            : matchedItem.timestamp;
-                          const actualDelay =
-                            (latestTimestamp - matchedItem.timestamp) / 1000;
-                          setStreamDelaySeconds(actualDelay);
-
-                          console.log(`[SYNC] ===== SYNC DEBUG =====`);
-                          console.log(
-                            `[SYNC] Target: Q${streamPeriodInput} ${streamClockInput}`
-                          );
-                          console.log(
-                            `[SYNC] Matched state: Q${
-                              match.state.period
-                            } ${formatClock(match.state.clock || "")}`
-                          );
-                          console.log(
-                            `[SYNC] Matched timestamp: ${new Date(
-                              matchedItem.timestamp
-                            ).toLocaleTimeString()}`
-                          );
-                          console.log(
-                            `[SYNC] Latest timestamp: ${new Date(
-                              latestTimestamp
-                            ).toLocaleTimeString()}`
-                          );
-                          console.log(
-                            `[SYNC] Delay from end: ${actualDelay.toFixed(1)}s`
-                          );
-                          console.log(
-                            `[SYNC] Sync anchor set - will progress from Q${streamPeriodInput} ${streamClockInput}`
-                          );
-                          console.log(
-                            `[SYNC] As time passes, game will advance relative to your PC time`
-                          );
-                          console.log(`[SYNC] ========================`);
-                        }
-                      } else {
-                        console.warn(
-                          `[SYNC] No match found for Q${streamPeriodInput} ${streamClockInput}`
-                        );
-                      }
-                    }
-                  }}
-                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold rounded text-sm transition"
-                >
-                  Sync
-                </button>
+              <input
+                type="range"
+                min="0"
+                max="30"
+                step="1"
+                value={streamDelay}
+                onChange={(e) => setStreamDelay(Number(e.target.value))}
+                className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+              />
+              <div className="text-xs opacity-60 mt-1">
+                Popup appears {Math.max(0, streamDelay - 3)}s before shot on
+                your stream
               </div>
-              <div className="text-xs opacity-60 mt-2">
-                Enter the game clock showing on your stream (e.g., "4:30" or
-                "2:15")
-              </div>
-              {streamGameClock &&
-                liveState?.clock &&
-                streamDelaySeconds > 0 && (
-                  <div className="text-xs mt-2 space-y-2">
-                    <div className="text-emerald-300">
-                      ✓ Synced to Q{syncedPeriod} {streamGameClock}
-                    </div>
-                    <div className="text-white/60">
-                      Live: Q{liveState.period} {liveState.clock} | Delay:{" "}
-                      {streamDelaySeconds.toFixed(1)}s
-                    </div>
-
-                    {/* Stream ahead adjustment */}
-                    <div className="space-y-1 pt-2 border-t border-white/10">
-                      <div className="flex justify-between items-center">
-                        <span className="text-white/60">Stream ahead by:</span>
-                        <span className="text-emerald-300 font-mono">
-                          {manualDelayAdjustment.toFixed(1)}s
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0"
-                        max="30"
-                        step="0.5"
-                        value={manualDelayAdjustment}
-                        onChange={(e) => {
-                          const adjustment = parseFloat(e.target.value);
-                          setManualDelayAdjustment(adjustment);
-                        }}
-                        className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-emerald-400"
-                      />
-                      <div className="flex justify-between text-[10px] text-white/40">
-                        <span>0s (exact sync)</span>
-                        <span>+30s ahead</span>
-                      </div>
-                      <div className="text-[10px] text-white/40 mt-1">
-                        If your stream is ahead of the time you entered,
-                        increase this to catch up
-                      </div>
-                    </div>
-
-                    <div className="text-white/40 text-[10px]">
-                      Dashboard auto-tracks behind live using real NBA
-                      timestamps
-                    </div>
-                  </div>
-                )}
             </div>
 
-            {/* Game Clock & Quarter */}
-            <div className="rounded-lg border border-emerald-400/30 bg-gradient-to-r from-emerald-500/10 to-purple-500/10 p-3 text-center">
-              <div className="text-xs uppercase tracking-wide text-white/60 mb-1">
-                {state?.period ? `Quarter ${state.period}` : "Game Time"}
+            {/* Stream Clock Sync */}
+            <div className="rounded-lg border border-white/10 bg-black/30 p-3">
+              <div className="mb-3">
+                <div className="text-xs opacity-70 mb-2">
+                  Sync to Stream Clock
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="MM:SS"
+                    value={streamClockInput}
+                    onChange={(e) => setStreamClockInput(e.target.value)}
+                    className="flex-1 rounded bg-white/10 px-2 py-1 text-sm text-white placeholder:text-white/40 border border-white/20 focus:border-emerald-400 focus:outline-none"
+                  />
+                  <input
+                    type="number"
+                    min="1"
+                    max="4"
+                    placeholder="Period"
+                    value={streamPeriodInput}
+                    onChange={(e) => setStreamPeriodInput(Number(e.target.value))}
+                    className="w-20 rounded bg-white/10 px-2 py-1 text-sm text-white placeholder:text-white/40 border border-white/20 focus:border-emerald-400 focus:outline-none"
+                  />
+                </div>
               </div>
-              <div className="text-2xl font-bold font-mono text-emerald-300">
-                {formatClock(state?.clock || "")}
-              </div>
+              <button
+                onClick={() => {
+                  if (!streamClockInput) return;
+                  const matched = findStateByGameClock(
+                    streamClockInput,
+                    streamPeriodInput
+                  );
+                  if (matched) {
+                    // Find the timestamp for this state in the queue
+                    const stateItem = stateQueueRef.current.find(
+                      (item) =>
+                        item.state.clock === matched.state.clock &&
+                        item.state.period === matched.state.period
+                    );
+                    const nbaTimestamp = stateItem?.timestamp ?? Date.now();
+                    setSyncAnchor({
+                      nbaTimestamp,
+                      realWorldTime: Date.now(),
+                    });
+                    setSyncedPeriod(streamPeriodInput);
+                    setStreamGameClock(streamClockInput);
+                    console.log(
+                      `[SYNC] Synced to Period ${streamPeriodInput} • ${streamClockInput}`
+                    );
+                  } else {
+                    console.warn(
+                      `[SYNC] Could not find state for Period ${streamPeriodInput} • ${streamClockInput}`
+                    );
+                  }
+                }}
+                className="w-full rounded bg-gradient-to-r from-emerald-500/80 to-purple-500/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white transition hover:from-emerald-400 hover:to-purple-400"
+              >
+                Sync
+              </button>
+              {syncAnchor && (
+                <div className="mt-2 text-xs opacity-60">
+                  Synced: Period {syncedPeriod} • {streamGameClock}
+                </div>
+              )}
             </div>
 
             {/* Live Score */}
@@ -1527,223 +1539,221 @@ export default function GameViewPage() {
             </div>
 
             {/* Last Shot Taken */}
-            {lastShot && lastShot.playerName && (
+            {state?.lastShot && state.lastShot.playerName && (
               <div className="rounded-lg border border-white/10 bg-gradient-to-r from-emerald-500/15 to-purple-500/20 p-3">
                 <div className="text-xs opacity-70 mb-1">Last Shot</div>
                 <div className="text-lg font-semibold">
-                  {lastShot.playerName}
-                  {lastShot.teamTricode && (
+                  {state.lastShot.playerName}
+                  {state.lastShot.teamTricode && (
                     <span className="ml-2 text-sm opacity-75">
-                      ({lastShot.teamTricode})
+                      ({state.lastShot.teamTricode})
                     </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 mt-1">
-                  <span
-                    className={`text-sm font-bold ${
-                      lastShot.shotResult &&
-                      lastShot.shotResult.toLowerCase().includes("made")
-                        ? "text-emerald-300"
-                        : "text-purple-200"
-                    }`}
-                  >
-                    {lastShot.shotResult || "Unknown"}
-                  </span>
-                  {lastShot.shotType && (
-                    <span className="text-xs opacity-70">
-                      {lastShot.shotType}
-                    </span>
-                  )}
-                  <span className="text-xs font-mono bg-white/10 px-1.5 py-0.5 rounded">
-                    +{lastShot.points || "?"}
-                  </span>
-                </div>
-                {lastShot.description && (
-                  <div className="text-xs opacity-60 mt-1">
-                    {lastShot.description}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Current Possession */}
-            <div className="bg-gradient-to-r from-emerald-500/15 to-purple-500/20 rounded-lg border border-white/10 p-3">
-              <div className="text-xs opacity-70 mb-1">Ball Handler</div>
-              <div className="text-lg font-semibold">
-                {state?.ballHandler?.name ?? "—"}
-                {state?.ballHandler?.teamTricode && (
-                  <span className="ml-2 text-sm opacity-75">
-                    ({state.ballHandler.teamTricode})
-                  </span>
-                )}
-              </div>
-              {state?.ballHandler?.liveStats && (
-                <div className="mt-2 space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="opacity-70">Shooting %</span>
-                    <span className="font-bold text-lg text-emerald-200">
-                      {state.ballHandler.liveStats.fieldGoalsAttempted > 0
-                        ? Math.round(
-                            (state.ballHandler.liveStats.fieldGoalsMade /
-                              state.ballHandler.liveStats.fieldGoalsAttempted) *
-                              100
-                          )
-                        : 0}
-                      %
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-2 text-xs">
-                    <div>
-                      <div className="opacity-60">PTS</div>
-                      <div className="font-bold">
-                        {state.ballHandler.liveStats.points ?? 0}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="opacity-60">FG</div>
-                      <div className="font-bold">
-                        {state.ballHandler.liveStats.fieldGoalsMade ?? 0}/
-                        {state.ballHandler.liveStats.fieldGoalsAttempted ?? 0}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="opacity-60">3PT</div>
-                      <div className="font-bold">
-                        {state.ballHandler.liveStats.threePointersMade ?? 0}/
-                        {state.ballHandler.liveStats.threePointersAttempted ??
-                          0}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="opacity-60">AST</div>
-                      <div className="font-bold">
-                        {state.ballHandler.liveStats.assists ?? 0}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Current Shooter */}
-            {state?.shooter && (
-              <div className="bg-gradient-to-r from-purple-500/20 via-purple-500/10 to-emerald-500/10 rounded-lg border border-white/10 p-3">
-                <div className="text-xs opacity-70 mb-1">Active Shooter</div>
-                <div className="text-lg font-semibold">
-                  {state.shooter.name}
-                  {state.shooter.teamTricode && (
-                    <span className="ml-2 text-sm opacity-75">
-                      ({state.shooter.teamTricode})
-                    </span>
-                  )}
-                </div>
-                {state.shooter.result && (
-                  <div className="text-sm mt-1 opacity-80">
-                    {state.shooter.result}
-                  </div>
-                )}
-                {state.shooter.liveStats && (
-                  <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                    <div>
-                      <div className="opacity-60">PTS</div>
-                      <div className="font-bold text-sm">
-                        {state.shooter.liveStats.points ?? 0}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="opacity-60">FG%</div>
-                      <div className="font-bold text-sm">
-                        {state.shooter.liveStats.fieldGoalsAttempted > 0
-                          ? Math.round(
-                              (state.shooter.liveStats.fieldGoalsMade /
-                                state.shooter.liveStats.fieldGoalsAttempted) *
-                                100
-                            )
-                          : 0}
-                        %
-                      </div>
-                    </div>
-                    <div>
-                      <div className="opacity-60">3PT%</div>
-                      <div className="font-bold text-sm">
-                        {state.shooter.liveStats.threePointersAttempted > 0
-                          ? Math.round(
-                              (state.shooter.liveStats.threePointersMade /
-                                state.shooter.liveStats
-                                  .threePointersAttempted) *
-                                100
-                            )
-                          : 0}
-                        %
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Last Action */}
-            {lastAction && (
-              <div className="rounded-lg border border-white/10 bg-black/30 p-3">
-                <div className="text-xs opacity-70 mb-1">Last Action</div>
-                <div className="text-sm">
-                  <span className="font-semibold">
-                    {lastAction.playerName ?? "Unknown"}
-                  </span>
-                  {lastAction.teamTricode && (
-                    <span className="opacity-75">
-                      {" "}
-                      ({lastAction.teamTricode})
-                    </span>
-                  )}
-                  {lastAction.actionType && (
-                    <span className="ml-2 text-xs bg-white/10 px-2 py-0.5 rounded">
-                      {lastAction.actionType}
-                    </span>
-                  )}
-                  {lastAction.shotResult && (
-                    <span className="ml-2 text-xs font-semibold">
-                      {lastAction.shotResult}
-                    </span>
-                  )}
-                  {lastAction.description && (
-                    <div className="text-xs opacity-60 mt-1">
-                      {lastAction.description}
-                    </div>
                   )}
                 </div>
               </div>
             )}
 
-            {/* Recent Actions Feed */}
-            {recentActions.length > 0 && (
-              <div>
-                <div className="text-xs opacity-70 mb-2">Recent Actions</div>
-                <div className="space-y-1 max-h-32 overflow-auto pr-2">
-                  {recentActions.slice(0, 5).map((act, i) => (
-                    <div
-                      key={i}
-                      className="text-xs rounded bg-black/30 border border-white/10 px-2 py-1"
-                    >
-                      <span className="font-semibold">
-                        {act.playerName ?? "?"}
+            {/* Last Play Impact */}
+            {state?.lastShot && state.lastShot.playerName && (
+              <div className="popup-flash border border-emerald-400/30 bg-[#0f192b] p-4 shadow-[0_28px_60px_rgba(0,0,0,0.6)]">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.3em] text-slate-400">
+                      Last Play Impact
+                    </div>
+                    <div className="mt-1 text-xl font-semibold text-white text-flash" key={state.lastShot.playerName}>
+                      {state.lastShot.playerName} ({state.lastShot.teamTricode ?? "NYY"})
+                    </div>
+                    <div className="mt-1 flex items-center gap-3 text-sm text-slate-300">
+                      <span className="inline-flex items-center gap-2 rounded border border-white/10 px-2.5 py-1">
+                        <svg
+                          aria-hidden="true"
+                          className="h-4 w-4 text-emerald-200"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={1.4}
+                        >
+                          <path d="M4 18h16M4 6h16M7 6l5 6-5 6" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                        {state.lastShot.shotType ?? "Deep Fly to Right"}
+                    </span>
+                      <span
+                        className={`text-sm font-bold text-flash ${
+                          state.lastShot.shotResult?.toLowerCase().includes("made")
+                            ? "text-emerald-300"
+                            : "text-purple-200"
+                        }`}
+                        key={state.lastShot.shotResult}
+                      >
+                        {state.lastShot.shotResult?.toLowerCase().includes("made")
+                          ? "Scoring Play"
+                          : "Out Recorded"}
                       </span>
-                      {act.teamTricode && (
-                        <span className="opacity-60"> ({act.teamTricode})</span>
-                      )}
-                      {act.actionType && (
-                        <span className="ml-1 opacity-75">
-                          — {act.actionType}
-                        </span>
-                      )}
-                      {act.shotResult && (
-                        <span className="ml-1 font-semibold">
-                          {act.shotResult}
-                        </span>
-                      )}
+                    </div>
+                  </div>
+                </div>
+                {state.lastShot.description && (
+                  <div className="mt-2 border border-white/10 bg-[#101a2d] px-3 py-2 text-xs text-slate-300/90">
+                    Live note: {state.lastShot.description}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Featured Batter */}
+            <div className="rounded-xl border border-slate-700/50 bg-[#1a1d29] p-4 shadow-lg border-l-2 border-l-green-500">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-4">
+                  {state?.ballHandler?.name && (
+                    <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-full border-2 border-blue-500/50 bg-[#0f1419]">
+                      <img
+                        src={`https://nba-headshot-api.vercel.app/api/player/${encodeURIComponent(state.ballHandler.name)}`}
+                        alt={state.ballHandler.name}
+                        className="h-full w-full object-cover"
+                        onError={(e) => {
+                          const parent = e.currentTarget.parentElement;
+                          if (parent && state?.ballHandler?.name) {
+                            e.currentTarget.style.display = 'none';
+                            const initials = state.ballHandler.name
+                              .split(' ')
+                              .map(n => n[0])
+                              .join('')
+                              .toUpperCase()
+                              .slice(0, 2);
+                            const fallback = document.createElement('div');
+                            fallback.className = 'absolute inset-0 flex items-center justify-center text-2xl font-black text-emerald-300';
+                            fallback.textContent = initials;
+                            parent.appendChild(fallback);
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Featured Player
+                    </div>
+                    <div className="mt-2 flex items-center gap-3 text-lg font-semibold text-white">
+                      <span className="text-flash" key={state?.ballHandler?.name ?? "unknown"}>{state?.ballHandler?.name ?? "Unknown"}</span>
+                      <span className="rounded-md bg-blue-500/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-blue-400 border border-blue-500/30">
+                        {state?.ballHandler?.teamTricode ?? "LAD"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {state?.ballHandler?.liveStats ? (
+              <div className="mt-4 grid grid-cols-5 gap-3 text-center text-xs uppercase tracking-[0.25em] text-slate-200">
+                  {[
+                    { label: "PTS", value: state.ballHandler.liveStats.points ?? 0, color: "text-sky-300", borderColor: "border-sky-400/40" },
+                    { label: "FG", value: `${state.ballHandler.liveStats.fieldGoalsMade ?? 0}/${state.ballHandler.liveStats.fieldGoalsAttempted ?? 0}`, color: "text-orange-300", borderColor: "border-orange-400/40" },
+                    { label: "3PT", value: `${state.ballHandler.liveStats.threePointersMade ?? 0}/${state.ballHandler.liveStats.threePointersAttempted ?? 0}`, color: "text-rose-300", borderColor: "border-rose-400/40" },
+                    { label: "REB", value: state.ballHandler.liveStats.rebounds ?? 0, color: "text-emerald-300", borderColor: "border-emerald-400/40" },
+                    { label: "AST", value: state.ballHandler.liveStats.assists ?? 0, color: "text-purple-300", borderColor: "border-purple-400/40" },
+                  ].map((stat) => (
+                    <div
+                      key={stat.label}
+                      className={`rounded border px-2 py-3 text-[11px] font-medium tracking-[0.35em] stat-flash ${stat.borderColor} ${stat.color}`}
+                    >
+                      <div>{stat.label}</div>
+                      <div className="mt-2 text-lg font-black tracking-normal text-white text-flash" key={stat.value}>
+                        {stat.value}
+                      </div>
                     </div>
                   ))}
+                  </div>
+              ) : (
+                <div className="mt-4 border border-white/10 bg-[#101d35] px-3 py-2 text-xs text-slate-300/80">
+                  Tracking player metrics…
+              </div>
+            )}
+            </div>
+
+            {/* Hot Streak Watch */}
+            {state?.shooter && (
+              <div className="rounded-xl border border-slate-700/50 bg-[#1a1d29] p-4 shadow-lg border-l-4 border-l-red-500">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-4">
+                    {state.shooter.name && (
+                      <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-full border-2 border-red-500/50 bg-[#0f1419]">
+                        <img
+                          src={`https://nba-headshot-api.vercel.app/api/player/${encodeURIComponent(state.shooter.name)}`}
+                          alt={state.shooter.name}
+                          className="h-full w-full object-cover"
+                          onError={(e) => {
+                            const parent = e.currentTarget.parentElement;
+                            if (parent && state?.shooter?.name) {
+                              e.currentTarget.style.display = 'none';
+                              const initials = state.shooter.name
+                                .split(' ')
+                                .map(n => n[0])
+                                .join('')
+                                .toUpperCase()
+                                .slice(0, 2);
+                              const fallback = document.createElement('div');
+                              fallback.className = 'absolute inset-0 flex items-center justify-center text-2xl font-black text-purple-300';
+                              fallback.textContent = initials;
+                              parent.appendChild(fallback);
+                            }
+                          }}
+                        />
+                      </div>
+                    )}
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                        Hot Streak Watch
+                      </div>
+                      <div className="mt-2 flex items-center gap-3 text-lg font-semibold text-white">
+                        <span className="text-flash" key={state.shooter?.name ?? "unknown"}>{state.shooter?.name ?? "Unknown"}</span>
+                        <span className="rounded-md bg-red-500/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-red-400 border border-red-500/30">
+                          {state.shooter.teamTricode ?? "ATL"}
+                        </span>
+                      </div>
+                      {state.shooter.result && (
+                        <div className="mt-1 inline-flex items-center gap-2 border border-white/10 bg-[#121f36] px-3 py-1 text-xs text-slate-200">
+                          <svg
+                            aria-hidden="true"
+                            className="h-4 w-4 text-purple-300"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                          >
+                            <path d="M5 21v-2h14v2Zm7-2q-2.075 0-3.537-1.462Q7 16.075 7 14q0-.9.438-1.913.437-1.012 1.462-2.087 1.025-1.075 1.562-1.725Q11 7.625 11 7t-.275-1.463Q10.45 4.075 9.5 3.1q1.825.175 3.125 1.7 1.3 1.525 1.3 3.575 0 1.175-.563 2.213-.562 1.037-1.562 2.037l-.8.775h3.3L12 17l1.5 1.5Z" />
+                          </svg>
+                          {state.shooter.result}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="border border-white/10 bg-[#131f35] px-3 py-2 text-xs text-slate-300">
+                    Parlay boost ready
+                  </div>
                 </div>
+                {state?.shooter?.liveStats ? (
+                  <div className="mt-4 grid grid-cols-5 gap-2 text-center text-xs uppercase tracking-[0.25em] text-slate-300">
+                    {[
+                      { label: "PTS", value: state.shooter.liveStats.points ?? 0, color: "text-amber-300", borderColor: "border-amber-400/40" },
+                      { label: "FG", value: `${state.shooter.liveStats.fieldGoalsMade ?? 0}/${state.shooter.liveStats.fieldGoalsAttempted ?? 0}`, color: "text-pink-300", borderColor: "border-pink-400/40" },
+                      { label: "3PT", value: `${state.shooter.liveStats.threePointersMade ?? 0}/${state.shooter.liveStats.threePointersAttempted ?? 0}`, color: "text-cyan-300", borderColor: "border-cyan-400/40" },
+                      { label: "REB", value: state.shooter.liveStats.rebounds ?? 0, color: "text-lime-300", borderColor: "border-lime-400/40" },
+                      { label: "AST", value: state.shooter.liveStats.assists ?? 0, color: "text-violet-300", borderColor: "border-violet-400/40" },
+                    ].map((stat) => (
+                      <div
+                        key={stat.label}
+                        className={`rounded border px-2 py-3 text-[11px] font-medium tracking-[0.35em] stat-flash ${stat.borderColor} ${stat.color}`}
+                      >
+                        <div>{stat.label}</div>
+                        <div className="mt-1 text-lg font-black tracking-normal text-white text-flash" key={stat.value}>
+                          {stat.value}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+                ) : (
+                  <div className="mt-4 border border-white/10 bg-[#131f35] px-3 py-2 text-xs text-slate-400">
+                    Tracking player metrics…
+                  </div>
+                )}
               </div>
             )}
 
@@ -1761,7 +1771,7 @@ export default function GameViewPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedPlayers.slice(0, 10).map((p) => (
+                    {(state?.players ?? []).sort((a, b) => (b.pts ?? 0) - (a.pts ?? 0)).slice(0, 10).map((p) => (
                       <tr key={p.personId} className="border-t border-white/10">
                         <td className="py-1">
                           {p.name}
@@ -1790,27 +1800,6 @@ export default function GameViewPage() {
 
           {/* Webcam + Gesture Detector */}
           <div className="relative rounded-[36px] border border-white/10 bg-black/45 p-4 lg:p-6 shadow-lg shadow-black/50">
-            {/* Prominent Join Code above webcam */}
-            {joinCode ? (
-              <div className="mb-3">
-                <div className="w-full rounded-2xl border border-emerald-400/40 bg-gradient-to-r from-emerald-500/20 via-emerald-400/10 to-purple-500/20 px-4 py-3 text-center">
-                  <div className="text-[10px] uppercase tracking-[0.4em] text-emerald-200 mb-1">
-                    Join on phone: /join
-                  </div>
-                  <div className="font-black text-2xl sm:text-3xl md:text-4xl tracking-[0.2em] text-white">
-                    {joinCode}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-            {/* Webcam status below join code, above webcam */}
-            <div className="mb-2 text-center">
-              <div className="inline-block rounded-full bg-white/10 px-4 py-1 text-xs text-white">
-                {webcamReady
-                  ? "Webcam Ready · 2 arms=shot | 1 arm=layup | hand on head=dunk"
-                  : "Initializing webcam..."}
-              </div>
-            </div>
             <WebcamGestureDetector
               debug
               activeLabelsOverride={assignedLabels}
@@ -1822,53 +1811,67 @@ export default function GameViewPage() {
                 "Right Player": playersBySlot[2]?.name ?? undefined,
               }}
               extraContent={
+                <>
                 <div className="flex flex-wrap items-stretch justify-center gap-2 md:gap-3 w-full max-w-7xl mx-auto px-2">
-                  {assignedLabels.map((label) => {
+                  {activeLabels.map((label) => {
                     const points = pointsByPlayer[label] ?? 0;
                     const digitCount = points.toLocaleString().length;
                     const playerCount = assignedLabels.length;
 
-                    // Dynamic text size based on digit count AND player count
+                    // Determine if this player is winning/losing for color coding
+                    const allPoints = activeLabels.map(l => pointsByPlayer[l] ?? 0);
+                    const maxPoints = Math.max(...allPoints);
+                    const minPoints = Math.min(...allPoints);
+                    const isWinning = points === maxPoints && maxPoints !== minPoints;
+                    const isLosing = points === minPoints && maxPoints !== minPoints;
+
                     const getTextSize = () => {
                       if (playerCount === 3) {
-                        // Smaller sizes for 3 players
                         if (digitCount <= 4)
-                          return "text-3xl sm:text-4xl md:text-5xl lg:text-6xl";
+                              return "text-2xl sm:text-3xl md:text-4xl";
                         if (digitCount <= 6)
-                          return "text-2xl sm:text-3xl md:text-4xl lg:text-5xl";
+                              return "text-xl sm:text-2xl md:text-3xl";
                         if (digitCount <= 8)
-                          return "text-xl sm:text-2xl md:text-3xl lg:text-4xl";
-                        return "text-lg sm:text-xl md:text-2xl lg:text-3xl";
+                              return "text-lg sm:text-xl md:text-2xl";
+                            return "text-base sm:text-lg md:text-xl";
                       } else {
-                        // Larger sizes for 1-2 players
                         if (digitCount <= 4)
-                          return "text-5xl sm:text-6xl md:text-7xl lg:text-8xl";
+                              return "text-4xl sm:text-5xl md:text-6xl";
                         if (digitCount <= 6)
-                          return "text-4xl sm:text-5xl md:text-6xl lg:text-7xl";
+                              return "text-3xl sm:text-4xl md:text-5xl";
                         if (digitCount <= 8)
-                          return "text-3xl sm:text-4xl md:text-5xl lg:text-6xl";
-                        return "text-2xl sm:text-3xl md:text-4xl lg:text-5xl";
+                              return "text-2xl sm:text-3xl md:text-4xl";
+                            return "text-xl sm:text-2xl md:text-3xl";
                       }
                     };
 
-                    // Dynamic width based on player count
                     const getWidthClasses = () => {
                       if (playerCount === 3) {
-                        return "flex-1 min-w-[110px] max-w-[180px]";
+                            return "flex-1 min-w-[100px] max-w-[160px]";
                       } else if (playerCount === 2) {
-                        return "flex-1 min-w-[140px] max-w-[280px]";
+                            return "flex-1 min-w-[140px] max-w-[220px]";
                       } else {
-                        return "flex-1 min-w-[160px] max-w-[320px]";
+                            return "flex-1 min-w-[160px] max-w-[280px]";
                       }
+                    };
+
+                    // Get base color for score
+                    const getScoreColor = () => {
+                      if (playerPointsDisplay[label].show) {
+                        return playerPointsDisplay[label].points > 0 ? "#49e6b5" : "#a855f7";
+                      }
+                      if (isWinning) return "#10b981"; // green-500
+                      if (isLosing) return "#ef4444"; // red-500
+                      return "#ffffff";
                     };
 
                     return (
                       <motion.div
                         key={label}
-                        className={`${getWidthClasses()} flex flex-col items-center justify-center rounded-xl border-2 border-white/10 bg-black/60 px-3 py-2`}
+                          className={`${getWidthClasses()} flex flex-col items-center justify-center border border-[#24405c] bg-[#0d1b31] px-2.5 py-2 shadow-[0_20px_45px_rgba(0,0,0,0.55)]`}
                         style={{
                           borderColor: LABEL_COLORS[label],
-                          boxShadow: `0 0 20px ${LABEL_COLORS[label]}40`,
+                              boxShadow: `0 0 18px ${LABEL_COLORS[label]}33`,
                         }}
                         animate={{
                           scale: playerPointsDisplay[label].show
@@ -1878,7 +1881,7 @@ export default function GameViewPage() {
                         transition={{ duration: 0.3 }}
                       >
                         <div
-                          className="text-[10px] uppercase tracking-wider font-semibold mb-1 whitespace-nowrap"
+                              className="mb-1 whitespace-nowrap text-[9px] font-semibold uppercase tracking-[0.35em]"
                           style={{ color: LABEL_COLORS[label] }}
                         >
                           {label === "Left Player"
@@ -1888,20 +1891,19 @@ export default function GameViewPage() {
                             : playersBySlot[2]?.name ?? label}
                         </div>
                         <motion.div
-                          className={`${getTextSize()} font-extrabold text-white leading-none tabular-nums`}
+                              className={`${getTextSize()} leading-none font-extrabold tabular-nums text-flash`}
                           key={points}
-                          initial={{ scale: 1 }}
+                          initial={{ scale: 1, filter: "brightness(1)" }}
                           animate={{
                             scale: playerPointsDisplay[label].show
-                              ? [1, 1.3, 1]
+                                  ? [1, 1.3, 1]
                               : 1,
-                            color: playerPointsDisplay[label].show
-                              ? playerPointsDisplay[label].points > 0
-                                ? "#49e6b5"
-                                : "#a855f7"
-                              : "#ffffff",
+                            color: getScoreColor(),
+                            filter: playerPointsDisplay[label].show
+                              ? ["brightness(1)", "brightness(1.8)", "brightness(1)"]
+                              : "brightness(1)",
                           }}
-                          transition={{ duration: 0.5 }}
+                              transition={{ duration: 0.5 }}
                         >
                           {points.toLocaleString()}
                         </motion.div>
@@ -1996,17 +1998,52 @@ export default function GameViewPage() {
                       </motion.div>
                     );
                   })}
-                </div>
+                    </div>
+                  <div className="border border-[#1e2f46] bg-[#0b1527] p-4 text-sm text-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.55)]">
+                    <div className="flex items-center justify-between font-semibold uppercase tracking-[0.2em] text-emerald-200/80">
+                      <span>Stream Delay (seconds)</span>
+                      <span>{streamDelay}s</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={30}
+                      step={1}
+                      value={streamDelay}
+                      onChange={(e) => setStreamDelay(Number(e.target.value))}
+                      className="mt-3 h-2 w-full cursor-pointer appearance-none bg-[#1d2f46] accent-emerald-400"
+                    />
+                    <div className="mt-2 text-xs uppercase tracking-[0.2em] text-slate-300/70">
+                      Popup appears {Math.max(0, streamDelay - 3)}s before shot
+                      on your stream
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (winAudioRef.current) {
+                          winAudioRef.current.currentTime = 0;
+                          winAudioRef.current.play().catch(err => {
+                            console.log('Audio test failed:', err);
+                          });
+                        }
+                      }}
+                      className="mt-4 w-full shimmer border border-purple-400/40 bg-purple-500/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.35em] text-purple-100 transition hover:bg-purple-500/35 hover:scale-105"
+                    >
+                      Test Win Sound
+                    </button>
+                  </div>
+                </>
               }
-              onActiveLabelsChange={(labels) => setActiveLabels(labels)}
-              onShootGesture={(label, shotType) =>
-                registerPrediction(label as PlayerLabel, {
-                  ts: Date.now(),
-                  period: state?.period,
-                  clock: state?.clock,
-                  shotType,
-                })
-              }
+              onActiveLabelsChange={(labels: PlayerLabel[]) => setActiveLabels(labels)}
+              onShootGesture={(label?: PlayerLabel, shotType?: ShotType) => {
+                if (label) {
+                  registerPrediction(label, {
+                    ts: Date.now(),
+                    period: state?.period,
+                    clock: state?.clock,
+                    shotType: shotType ?? null,
+                  });
+                }
+              }}
             />
             {overlay && (
               <ScoreAnimation
@@ -2021,13 +2058,50 @@ export default function GameViewPage() {
               />
             )}
             {error && (
-              <div className="absolute bottom-3 left-3 right-3 rounded bg-black/60 p-2 text-xs text-purple-200">
+              <div className="absolute bottom-3 left-3 right-3 border border-purple-400/30 bg-black/60 p-2 text-xs text-purple-200">
                 {error}
               </div>
             )}
           </div>
         </div>
       </div>
+      {((state?.lastAction || liveState?.lastAction) || (state?.recentActions?.length ?? 0) > 0 || (liveState?.recentActions?.length ?? 0) > 0) && (
+        <div className="fixed bottom-6 left-6 z-40 hidden max-w-3xl flex-col gap-3 md:flex">
+          {[...(state?.recentActions ?? liveState?.recentActions ?? []).slice(0, 2), ...((state?.lastAction || liveState?.lastAction) ? [state?.lastAction || liveState?.lastAction] : [])].slice(0, 3).map((act, idx) => (
+            <div
+              key={idx}
+              className="popup-flash relative overflow-hidden rounded-lg border-2 border-emerald-400/40 bg-gradient-to-br from-[#0f192b] to-[#1a1d29] px-8 py-4 text-base text-slate-100 shadow-[0_0_30px_rgba(16,185,129,0.3),0_20px_60px_rgba(0,0,0,0.7)]"
+              style={{
+                animation: 'popupFlash 0.6s ease-out, glowPulse 2s ease-in-out infinite, popupFadeOut 5s ease-in forwards'
+              }}
+            >
+              <div className="text-center">
+                <div className="text-sm font-semibold uppercase tracking-wider text-slate-300">
+                  {idx === 1 && (state?.lastAction || liveState?.lastAction) ? "INSTANT RESULT" : "LIVE UPDATE"}
+                </div>
+              </div>
+              <div className="mt-3 text-base font-semibold text-white">
+                {act?.playerName ?? act?.name ?? "Unknown"} ({act?.teamTricode ?? "NYY"})
+              </div>
+              <div className="mt-2 text-xs text-slate-300">
+                {act.actionType
+                  ? `${act.actionType} — ${act.shotResult ?? "Odds move"}`
+                  : act.description ?? act.shotResult ?? "Live line moved"}
+              </div>
+              <div className="mt-3 flex items-center justify-between text-xs text-emerald-300">
+                <span>Live odds shift</span>
+                <span className="border border-emerald-400/40 px-2 py-[2px] font-semibold text-emerald-100">
+                  {idx % 2 === 0 ? "+105 → -120" : "+160 → +140"}
+                </span>
+              </div>
+              <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-slate-400">
+                <span>Parlay ready</span>
+                <span className="text-emerald-200">Boost +15%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <ShotIncomingOverlay show={showShotIncoming} countdown={shotCountdown} />
       <ShotResultOverlay show={showShotResult} shotData={currentShotData} />

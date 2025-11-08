@@ -1023,35 +1023,8 @@ export default function WebcamGestureDetector({
   const showShotBanner = activeShotLabels.length > 0;
 
   return (
-    <div className="flex flex-col gap-4">
-      {!activeLabelsOverride && (
-        <div className="flex flex-col gap-1 text-sm text-slate-200">
-          <label className="font-semibold tracking-wide">
-            Players: {playerCount}
-          </label>
-          <input
-            type="range"
-            min={1}
-            max={3}
-            value={playerCount}
-            onChange={(event) =>
-              setPlayerCount(
-                Math.min(3, Math.max(1, Number(event.target.value))) as
-                  | 1
-                  | 2
-                  | 3
-              )
-            }
-            className="w-full accent-sky-400"
-          />
-          <div className="flex justify-between text-xs uppercase tracking-wide text-slate-400">
-            <span>1</span>
-            <span>2</span>
-            <span>3</span>
-          </div>
-        </div>
-      )}
-      <div className="relative aspect-video overflow-hidden rounded-2xl bg-black">
+    <div className="flex flex-col gap-5">
+      <div className="relative aspect-video overflow-hidden bg-[#07070e] border border-white/10 shadow-[0_25px_45px_rgba(0,0,0,0.55)]">
         <video
           ref={assignVideoRef(0)}
           className="h-full w-full object-cover"
@@ -1077,7 +1050,7 @@ export default function WebcamGestureDetector({
 
             return (
               <div key={label} className={`absolute top-3 ${position}`}>
-                <div className="rounded bg-black/55 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-white mb-2">
+                <div className="rounded-md border border-white/10 bg-black/75 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.35em] text-white shadow-[0_0_12px_rgba(28,255,176,0.25)] mb-2">
                   {displayNames?.[label] ?? label}
                 </div>
                 {shotType && (
@@ -1101,15 +1074,51 @@ export default function WebcamGestureDetector({
             );
           })}
           {!hideReadyBanner && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 rounded-full bg-black/65 px-4 py-1 text-xs text-white text-center">
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 rounded-full border border-emerald-400/30 bg-black/70 px-4 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-emerald-100 shadow-[0_0_14px_rgba(28,255,176,0.35)]">
               {ready
                 ? "Webcam Ready · 2 arms=shot | 1 arm=layup | hand on head=dunk"
-                : "Initializing webcam..."}
+                : "Initializing camera feed..."}
             </div>
           )}
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-60">
+            <svg
+              aria-hidden="true"
+              className="h-32 w-32 text-emerald-200/30"
+              viewBox="0 0 120 120"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.6}
+            >
+              <path d="M10 100 L60 10 L110 100 Z" strokeLinecap="round" />
+              <circle cx="60" cy="45" r="14" />
+              <line x1="35" y1="90" x2="85" y2="90" />
+            </svg>
+          </div>
         </div>
       </div>
       {extraContent ? <div>{extraContent}</div> : null}
+      <div className="flex flex-col gap-2 border border-white/15 bg-black/40 p-4 text-sm text-slate-200 shadow-[0_18px_38px_rgba(0,0,0,0.55)]">
+        <label className="font-semibold uppercase tracking-[0.3em] text-emerald-100">
+          Active Players: {playerCount === 3 ? "3+" : playerCount}
+        </label>
+        <input
+          type="range"
+          min={1}
+          max={3}
+          value={playerCount}
+          onChange={(event) =>
+            setPlayerCount(
+              Math.min(3, Math.max(1, Number(event.target.value))) as 1 | 2 | 3
+            )
+          }
+          className="mlb-range w-full cursor-pointer"
+        />
+        <div className="flex justify-between text-[11px] uppercase tracking-[0.3em] text-slate-400">
+          <span>1</span>
+          <span>2</span>
+          <span>3+</span>
+        </div>
+      </div>
       {lanePoints ? (
         <div className="flex items-stretch justify-between gap-3">
           {activeLabels.map((label) => {

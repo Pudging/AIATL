@@ -2092,9 +2092,13 @@ export default function GameViewPage() {
                   {state?.ballHandler?.name && (
                     <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-full border-2 border-blue-500/50 bg-[#0f1419]">
                       <img
-                        src={`https://nba-headshot-api.vercel.app/api/player/${encodeURIComponent(
-                          state.ballHandler.name
-                        )}`}
+                        src={
+                          state.ballHandler.personId
+                            ? `https://cdn.nba.com/headshots/nba/latest/260x190/${state.ballHandler.personId}.png`
+                            : `https://nba-headshot-api.vercel.app/api/player/${encodeURIComponent(
+                                state.ballHandler.name
+                              )}`
+                        }
                         alt={state.ballHandler.name}
                         className="h-full w-full object-cover"
                         onError={(e) => {
@@ -2206,9 +2210,13 @@ export default function GameViewPage() {
                     {state.shooter.name && (
                       <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-full border-2 border-red-500/50 bg-[#0f1419]">
                         <img
-                          src={`https://nba-headshot-api.vercel.app/api/player/${encodeURIComponent(
-                            state.shooter.name
-                          )}`}
+                          src={
+                            state.shooter.personId
+                              ? `https://cdn.nba.com/headshots/nba/latest/260x190/${state.shooter.personId}.png`
+                              : `https://nba-headshot-api.vercel.app/api/player/${encodeURIComponent(
+                                  state.shooter.name
+                                )}`
+                          }
                           alt={state.shooter.name}
                           className="h-full w-full object-cover"
                           onError={(e) => {

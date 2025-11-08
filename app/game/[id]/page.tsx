@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
 import type { ParsedGameState } from "@/components/types";
+import type { ShotType } from "@/components/WebcamGestureDetector";
 import ScoreAnimation from "@/components/ScoreAnimation";
 import ShotIncomingOverlay from "@/components/ShotIncomingOverlay";
 import ShotResultOverlay from "@/components/ShotResultOverlay";
@@ -41,7 +42,7 @@ export default function GameViewPage() {
     "Right Player": brandPalette.purple,
     "Center Player": "#34d399",
   };
-  const POINT_DELTA = 10000;
+  const POINT_DELTA = 1000;
   const params = useParams<{ id: string }>();
   const id = params.id;
   const [state, setState] = useState<ParsedGameState | null>(null);
@@ -49,12 +50,12 @@ export default function GameViewPage() {
   const [pointsByPlayer, setPointsByPlayer] = useState<
     Record<PlayerLabel, number>
   >(() => {
-    // For test game, start at 100k
+    // For test game, start at 10k
     const isTest = id?.toUpperCase() === "TEST001";
     return {
-      "Left Player": isTest ? 100000 : 0,
-      "Right Player": isTest ? 100000 : 0,
-      "Center Player": isTest ? 100000 : 0,
+      "Left Player": isTest ? 10000 : 0,
+      "Right Player": isTest ? 10000 : 0,
+      "Center Player": isTest ? 10000 : 0,
     };
   });
   const [activeLabels, setActiveLabels] = useState<PlayerLabel[]>([
@@ -65,7 +66,7 @@ export default function GameViewPage() {
   const predictionsRef = useRef<
     Record<
       PlayerLabel,
-      { ts: number; period?: number | string | null; clock?: string }[]
+      { ts: number; period?: number | string | null; clock?: string; shotType?: ShotType }[]
     >
   >({
     "Left Player": [],
@@ -86,11 +87,16 @@ export default function GameViewPage() {
     null
   );
   const [playerPointsDisplay, setPlayerPointsDisplay] = useState<
-    Record<PlayerLabel, { show: boolean; points: number }>
+    Record<PlayerLabel, { show: boolean; points: number; basePoints: number; shotMultiplier: number; streakMultiplier: number }>
   >({
-    "Left Player": { show: false, points: 0 },
-    "Right Player": { show: false, points: 0 },
-    "Center Player": { show: false, points: 0 },
+    "Left Player": { show: false, points: 0, basePoints: 0, shotMultiplier: 1, streakMultiplier: 1 },
+    "Right Player": { show: false, points: 0, basePoints: 0, shotMultiplier: 1, streakMultiplier: 1 },
+    "Center Player": { show: false, points: 0, basePoints: 0, shotMultiplier: 1, streakMultiplier: 1 },
+  });
+  const [playerStreaks, setPlayerStreaks] = useState<Record<PlayerLabel, number>>({
+    "Left Player": 0,
+    "Right Player": 0,
+    "Center Player": 0,
   });
   const [lanePoints, setLanePoints] = useState<
     Record<PlayerLabel, number | null>
@@ -232,6 +238,7 @@ export default function GameViewPage() {
       ts: number;
       period?: number | string | null;
       clock?: string;
+      shotType?: ShotType;
     }
   ) {
     if (!predictionWindowActive || !label) return;
@@ -311,21 +318,84 @@ export default function GameViewPage() {
         const labelsWithPrediction = PLAYER_LABELS.filter(
           (label) => (predictionsRef.current[label]?.length ?? 0) > 0
         );
+        
+        const baseDelta = isMade ? POINT_DELTA : -POINT_DELTA;
+        
+        // Map NBA shot type to our gesture types
+        const actualShotType = lastShot.shotType?.toLowerCase();
+        let actualGestureType: ShotType = "normal";
+        if (actualShotType?.includes("dunk")) {
+          actualGestureType = "dunk";
+        } else if (actualShotType?.includes("layup")) {
+          actualGestureType = "layup";
+        }
+        
         if (labelsWithPrediction.length > 0) {
-          const delta = isMade ? POINT_DELTA : -POINT_DELTA;
+          // Calculate deltas for each player once with streaks
+          const playerDeltas: Record<PlayerLabel, number> = {} as Record<PlayerLabel, number>;
+          const playerDisplayInfo: Record<PlayerLabel, { basePoints: number; shotMultiplier: number; streakMultiplier: number; finalPoints: number }> = {} as any;
+          
+          labelsWithPrediction.forEach((label) => {
+            const playerPredictions = predictionsRef.current[label] ?? [];
+            const lastPrediction = playerPredictions[playerPredictions.length - 1];
+            const predictedShotType = lastPrediction?.shotType;
+            
+            // Apply 2x multiplier if shot type matches
+            const shotMultiplier = predictedShotType === actualGestureType ? 2 : 1;
+            
+            // Update streak: increment if made, reset if missed
+            const currentStreak = playerStreaks[label] ?? 0;
+            const newStreak = isMade ? currentStreak + 1 : 0;
+            
+            // Streak multiplier: 1.2x for each correct prediction AFTER the first (applies after shot multiplier)
+            // First correct = 1x, second = 1.2x, third = 1.4x, etc.
+            const streakMultiplier = 1 + (Math.max(0, newStreak - 1) * 0.2);
+            
+            // Calculate final delta: base * shotMultiplier * streakMultiplier
+            const delta = Math.round(baseDelta * shotMultiplier * streakMultiplier);
+            
+            playerDeltas[label] = delta;
+            playerDisplayInfo[label] = {
+              basePoints: baseDelta,
+              shotMultiplier,
+              streakMultiplier,
+              finalPoints: delta,
+            };
+            
+            console.log(`[POINTS] ${label}: predicted=${predictedShotType}, actual=${actualGestureType}, shot=${shotMultiplier}x, streak=${newStreak} (${streakMultiplier.toFixed(1)}x), delta=${delta}`);
+          });
+          
+          // Update streaks
+          setPlayerStreaks((prev) => {
+            const next = { ...prev };
+            labelsWithPrediction.forEach((label) => {
+              const currentStreak = prev[label] ?? 0;
+              next[label] = isMade ? currentStreak + 1 : 0;
+            });
+            return next;
+          });
+          
+          // Update points
           setPointsByPlayer((prev) => {
             const next = { ...prev };
             labelsWithPrediction.forEach((label) => {
-              next[label] = (next[label] ?? 0) + delta;
+              next[label] = (next[label] ?? 0) + playerDeltas[label];
             });
             return next;
           });
 
-          // Show individual overlays for each player
+          // Show individual overlays for each player with their specific delta
           setPlayerPointsDisplay((prev) => {
             const next = { ...prev };
             labelsWithPrediction.forEach((label) => {
-              next[label] = { show: true, points: delta };
+              const info = playerDisplayInfo[label];
+              next[label] = { 
+                show: true, 
+                points: info.finalPoints,
+                basePoints: info.basePoints,
+                shotMultiplier: info.shotMultiplier,
+                streakMultiplier: info.streakMultiplier,
+              };
             });
             return next;
           });
@@ -333,14 +403,14 @@ export default function GameViewPage() {
           // Hide overlays after 2.5 seconds
           setTimeout(() => {
             setPlayerPointsDisplay({
-              "Left Player": { show: false, points: 0 },
-              "Right Player": { show: false, points: 0 },
-              "Center Player": { show: false, points: 0 },
+              "Left Player": { show: false, points: 0, basePoints: 0, shotMultiplier: 1, streakMultiplier: 1 },
+              "Right Player": { show: false, points: 0, basePoints: 0, shotMultiplier: 1, streakMultiplier: 1 },
+              "Center Player": { show: false, points: 0, basePoints: 0, shotMultiplier: 1, streakMultiplier: 1 },
             });
           }, 2500);
-
+          
           // Keep old single overlay for backwards compatibility (can remove later)
-          setPointsEarned(delta);
+          setPointsEarned(baseDelta);
           setPointsEarnedLabel(
             labelsWithPrediction.length === 1
               ? labelsWithPrediction[0]
@@ -349,18 +419,29 @@ export default function GameViewPage() {
           setShowPointsEarned(true);
           setTimeout(() => setShowPointsEarned(false), 3000);
         }
-        // Show lane points for all active labels (predicted => delta, else 0)
+        // Show lane points for all active labels (predicted => delta with multiplier, else 0)
         const laneMap: Record<PlayerLabel, number | null> = {
           "Left Player": null,
           "Right Player": null,
           "Center Player": null,
         };
+        
+        // Calculate deltas for lane display
+        const laneDeltas: Record<PlayerLabel, number> = {} as Record<PlayerLabel, number>;
+        labelsWithPrediction.forEach((label) => {
+          const playerPredictions = predictionsRef.current[label] ?? [];
+          const lastPrediction = playerPredictions[playerPredictions.length - 1];
+          const predictedShotType = lastPrediction?.shotType;
+          const multiplier = predictedShotType === actualGestureType ? 2 : 1;
+          laneDeltas[label] = baseDelta * multiplier;
+        });
+        
         activeLabels.forEach((label) => {
-          laneMap[label] = labelsWithPrediction.includes(label)
-            ? isMade
-              ? POINT_DELTA
-              : -POINT_DELTA
-            : 0;
+          if (labelsWithPrediction.includes(label)) {
+            laneMap[label] = laneDeltas[label];
+          } else {
+            laneMap[label] = 0;
+          }
         });
         setLanePoints(laneMap);
         setTimeout(() => {
@@ -1150,17 +1231,50 @@ export default function GameViewPage() {
                         >
                           {points.toLocaleString()}
                         </motion.div>
+                        {playerStreaks[label] > 0 && (
+                          <motion.div
+                            initial={{ scale: 0, y: -5 }}
+                            animate={{ scale: 1, y: 0 }}
+                            className="relative text-[10px] font-bold mt-1 px-2 py-0.5 rounded-full bg-gradient-to-r from-orange-500 via-red-500 to-orange-600 text-white whitespace-nowrap overflow-visible"
+                          >
+                            {/* Fire particles */}
+                            {[...Array(6)].map((_, i) => (
+                              <motion.div
+                                key={`fire-${i}`}
+                                className="absolute w-1 h-1 rounded-full"
+                                style={{
+                                  background: i % 2 === 0 ? "#ff6b00" : "#ff0000",
+                                  left: `${10 + i * 15}%`,
+                                  bottom: "100%",
+                                }}
+                                animate={{
+                                  y: [-2, -8, -2],
+                                  opacity: [0.8, 0.4, 0.8],
+                                  scale: [1, 0.5, 1],
+                                }}
+                                transition={{
+                                  duration: 0.8,
+                                  repeat: Infinity,
+                                  delay: i * 0.1,
+                                  ease: "easeInOut",
+                                }}
+                              />
+                            ))}
+                            {playerStreaks[label]} STREAK
+                          </motion.div>
+                        )}
                       </motion.div>
                     );
                   })}
                 </div>
               }
               onActiveLabelsChange={(labels) => setActiveLabels(labels)}
-              onShootGesture={(label) =>
+              onShootGesture={(label, shotType) =>
                 registerPrediction(label as PlayerLabel, {
                   ts: Date.now(),
                   period: state?.period,
                   clock: state?.clock,
+                  shotType,
                 })
               }
             />
@@ -1188,16 +1302,25 @@ export default function GameViewPage() {
             label: "Left Player",
             points: playerPointsDisplay["Left Player"].points,
             show: playerPointsDisplay["Left Player"].show,
+            basePoints: playerPointsDisplay["Left Player"].basePoints,
+            shotMultiplier: playerPointsDisplay["Left Player"].shotMultiplier,
+            streakMultiplier: playerPointsDisplay["Left Player"].streakMultiplier,
           },
           {
             label: "Right Player",
             points: playerPointsDisplay["Right Player"].points,
             show: playerPointsDisplay["Right Player"].show,
+            basePoints: playerPointsDisplay["Right Player"].basePoints,
+            shotMultiplier: playerPointsDisplay["Right Player"].shotMultiplier,
+            streakMultiplier: playerPointsDisplay["Right Player"].streakMultiplier,
           },
           {
             label: "Center Player",
             points: playerPointsDisplay["Center Player"].points,
             show: playerPointsDisplay["Center Player"].show,
+            basePoints: playerPointsDisplay["Center Player"].basePoints,
+            shotMultiplier: playerPointsDisplay["Center Player"].shotMultiplier,
+            streakMultiplier: playerPointsDisplay["Center Player"].streakMultiplier,
           },
         ]}
       />

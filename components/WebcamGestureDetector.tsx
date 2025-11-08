@@ -20,11 +20,14 @@ const PLAYER_LAYOUTS: Record<1 | 2 | 3, PlayerLabel[]> = {
   3: ["Left Player", "Center Player", "Right Player"],
 };
 
+export type ShotType = "dunk" | "layup" | "normal" | null;
+
 type DebugInfo = {
   elbowsUp: boolean;
   wristsUp: boolean;
   velocity: number;
   decision: boolean;
+  shotType: ShotType;
 };
 
 const PLAYER_COLORS: Record<PlayerLabel, string> = {
@@ -46,7 +49,7 @@ function createPlayerMap<T>(initializer: (label: PlayerLabel) => T) {
 }
 
 type Props = {
-  onShootGesture?: (player?: PlayerLabel) => void;
+  onShootGesture?: (player?: PlayerLabel, shotType?: ShotType) => void;
   debug?: boolean;
   extraContent?: ReactNode;
   onActiveLabelsChange?: (labels: PlayerLabel[]) => void;
@@ -75,6 +78,7 @@ export default function WebcamGestureDetector({
       wristsUp: false,
       velocity: 0,
       decision: false,
+      shotType: null,
     }))
   );
   const gestureCooldownsRef = useRef<Record<PlayerLabel, number>>(
@@ -95,6 +99,9 @@ export default function WebcamGestureDetector({
   );
   const shotTimeoutsRef = useRef<Record<PlayerLabel, number>>(
     createPlayerMap(() => 0)
+  );
+  const [currentShotTypes, setCurrentShotTypes] = useState<Record<PlayerLabel, ShotType>>(
+    createPlayerMap(() => null)
   );
   const activeLabels = useMemo<PlayerLabel[]>(
     () => PLAYER_LAYOUTS[playerCount],
@@ -390,6 +397,7 @@ export default function WebcamGestureDetector({
       wristsUp: false,
       velocity: 0,
       decision: false,
+      shotType: null,
     };
   }
 
@@ -448,18 +456,43 @@ export default function WebcamGestureDetector({
       re = kp("right_elbow");
     const lw = kp("left_wrist"),
       rw = kp("right_wrist");
+    const nose = kp("nose");
+    
     if (!ls || !rs || (!le && !re) || (!lw && !rw)) {
       resetDebugInfo(playerLabel);
       return false;
     }
-    const elbowsUp = (le ? le.y < ls.y : false) && (re ? re.y < rs.y : false);
-    const wristsUp = (lw ? lw.y < ls.y : false) && (rw ? rw.y < rs.y : false);
-    if (!(elbowsUp && wristsUp)) {
+    
+    // Check for dunk gesture (hand on head)
+    const isDunkGesture = detectDunkGesture(lw, rw, nose);
+    
+    // Check for layup gesture (one arm up)
+    const isLayupGesture = detectLayupGesture(lw, rw, le, re, ls, rs);
+    
+    // More strict checking for normal shot - BOTH arms must be clearly up
+    const elbowsUp = !!(le && re && le.y < ls.y - 20 && re.y < rs.y - 20);
+    const wristsUp = !!(lw && rw && lw.y < ls.y - 20 && rw.y < rs.y - 20);
+    
+    // Both wrists should be at similar height (shooting form)
+    const wristsLevel = lw && rw ? Math.abs(lw.y - rw.y) < 80 : false;
+    
+    // Determine shot type
+    let shotType: ShotType = null;
+    if (isDunkGesture) {
+      shotType = "dunk";
+    } else if (isLayupGesture) {
+      shotType = "layup";
+    } else if (elbowsUp && wristsUp && wristsLevel) {
+      shotType = "normal";
+    }
+    
+    if (!(elbowsUp && wristsUp && wristsLevel) && !isDunkGesture && !isLayupGesture) {
       debugInfoRef.current[playerLabel] = {
         elbowsUp,
         wristsUp,
         velocity: 0,
         decision: false,
+        shotType: null,
       };
       return false;
     }
@@ -469,6 +502,7 @@ export default function WebcamGestureDetector({
         wristsUp,
         velocity: 0,
         decision: false,
+        shotType,
       };
       return false;
     }
@@ -524,19 +558,84 @@ export default function WebcamGestureDetector({
     const diag = canvas ? Math.hypot(canvas.width, canvas.height) : 1000;
     const pxPerSecThreshold = diag * 0.04; // 4% of diagonal per second
 
-    const decision =
-      elbowsUp &&
-      wristsUp &&
-      (velocity > pxPerSecThreshold ||
-        forwardComponent > pxPerSecThreshold * 0.75);
+    // For dunk and layup, don't require velocity
+    let decision = false;
+    if (isDunkGesture || isLayupGesture) {
+      decision = true;
+    } else {
+      // Normal shot requires: both arms up, level, AND good velocity
+      decision =
+        elbowsUp &&
+        wristsUp &&
+        wristsLevel &&
+        (velocity > pxPerSecThreshold ||
+          forwardComponent > pxPerSecThreshold * 0.75);
+    }
+    
     debugInfoRef.current[playerLabel] = {
       elbowsUp,
       wristsUp,
       velocity,
       decision,
+      shotType,
     };
     return decision;
   }
+  
+  // Helper function to detect dunk gesture (hand DIRECTLY on head)
+  function detectDunkGesture(
+    lw: posedetection.Keypoint | undefined,
+    rw: posedetection.Keypoint | undefined,
+    nose: posedetection.Keypoint | undefined
+  ): boolean {
+    if (!nose) return false;
+    
+    // Hand must be DIRECTLY on top of head (above nose, close horizontally)
+    const leftOnHead = lw ? (
+      lw.y < nose.y - 20 && // Above the nose
+      Math.abs(lw.x - nose.x) < 60 && // Horizontally close to center
+      Math.hypot(lw.x - nose.x, lw.y - nose.y) < 100 // Overall close
+    ) : false;
+    const rightOnHead = rw ? (
+      rw.y < nose.y - 20 && // Above the nose
+      Math.abs(rw.x - nose.x) < 60 && // Horizontally close to center
+      Math.hypot(rw.x - nose.x, rw.y - nose.y) < 100 // Overall close
+    ) : false;
+    
+    return leftOnHead || rightOnHead;
+  }
+  
+  // Helper function to detect layup gesture (one arm extended up at angle)
+  function detectLayupGesture(
+    lw: posedetection.Keypoint | undefined,
+    rw: posedetection.Keypoint | undefined,
+    le: posedetection.Keypoint | undefined,
+    re: posedetection.Keypoint | undefined,
+    ls: posedetection.Keypoint,
+    rs: posedetection.Keypoint
+  ): boolean {
+    // Check left arm: extended upward with good angle
+    const leftArmExtended = !!(le && lw && 
+      lw.y < ls.y - 50 && // Wrist well above shoulder
+      le.y < ls.y && // Elbow above shoulder
+      lw.y < le.y // Wrist above elbow (arm extended)
+    );
+    
+    // Check right arm: extended upward with good angle
+    const rightArmExtended = !!(re && rw && 
+      rw.y < rs.y - 50 && // Wrist well above shoulder
+      re.y < rs.y && // Elbow above shoulder
+      rw.y < re.y // Wrist above elbow (arm extended)
+    );
+    
+    // Other arm should be down or neutral (not raised)
+    const leftArmDown = !!(le && le.y >= ls.y - 20);
+    const rightArmDown = !!(re && re.y >= rs.y - 20);
+    
+    // One arm extended up, other arm not raised
+    return (leftArmExtended && rightArmDown) || (rightArmExtended && leftArmDown);
+  }
+  
 
   useEffect(() => {
     let raf = 0;
@@ -606,19 +705,27 @@ export default function WebcamGestureDetector({
         if (!pose) {
           lastPlayerPosesRef.current[label] = null;
           resetDebugInfo(label);
+          setCurrentShotTypes(prev => ({ ...prev, [label]: null }));
           return;
         }
+        
+        // Update current shot type for display
+        const debugInfo = debugInfoRef.current[label];
+        setCurrentShotTypes(prev => ({ ...prev, [label]: debugInfo.shotType }));
+        
         if (decision) {
           showShotIndicator(label);
         }
         const cooldownUntil = gestureCooldownsRef.current[label] ?? 0;
         if (nowTs >= cooldownUntil && decision) {
           gestureCooldownsRef.current[label] = nowTs + 1500;
-          onShootGesture?.(label);
+          const shotType = debugInfoRef.current[label].shotType;
+          onShootGesture?.(label, shotType);
           if (debug) {
+            const shotTypeLabel = shotType ? ` (${shotType.toUpperCase()})` : '';
             eventsRef.current.push({
               ts: nowTs,
-              label: `Shot detected · ${label}`,
+              label: `Shot detected${shotTypeLabel} · ${label}`,
               player: label,
             });
             if (eventsRef.current.length > 20) eventsRef.current.shift();
@@ -710,18 +817,32 @@ export default function WebcamGestureDetector({
                 : index === activeLabels.length - 1
                 ? "right-3"
                 : "left-1/2 -translate-x-1/2";
+            const shotType = currentShotTypes[label];
+            
             return (
-              <div
-                key={label}
-                className={`absolute top-3 rounded bg-black/55 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-white ${position}`}
-              >
-                {label}
+              <div key={label} className={`absolute top-3 ${position}`}>
+                <div className="rounded bg-black/55 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-white mb-2">
+                  {label}
+                </div>
+                {shotType && (
+                  <div
+                    className={`rounded-lg px-3 py-2 text-sm font-bold uppercase tracking-wider animate-pulse ${
+                      shotType === "dunk"
+                        ? "bg-purple-500/90 text-white"
+                        : shotType === "layup"
+                        ? "bg-blue-500/90 text-white"
+                        : "bg-green-500/90 text-white"
+                    }`}
+                  >
+                    {shotType === "dunk" ? "🏀 DUNK" : shotType === "layup" ? "🤾 LAYUP" : "🎯 SHOT"}
+                  </div>
+                )}
               </div>
             );
           })}
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 rounded-full bg-black/65 px-4 py-1 text-xs text-white">
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 rounded-full bg-black/65 px-4 py-1 text-xs text-white text-center">
             {ready
-              ? "Webcam Ready · Raise both arms to shoot"
+              ? "Webcam Ready · 2 arms=shot | 1 arm=layup | hand on head=dunk"
               : "Initializing webcam..."}
           </div>
         </div>

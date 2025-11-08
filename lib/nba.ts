@@ -1,17 +1,44 @@
 import axios from 'axios';
 import type { ParsedGameState, SimplifiedGame } from '@/components/types';
+import { TEST_GAME_DATA, TEST_BOXSCORE_DATA, getTestGameDataAtTimestamp } from './testGameData';
 
 const SCOREBOARD_URL = 'https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json';
 const PLAYBYPLAY_URL = (gameId: string) => `https://cdn.nba.com/static/json/liveData/playbyplay/playbyplay_${gameId}.json`;
+const BOXSCORE_URL = (gameId: string) => `https://cdn.nba.com/static/json/liveData/boxscore/boxscore_${gameId}.json`;
 
 export async function fetchLiveScoreboard(): Promise<any> {
   const { data } = await axios.get(SCOREBOARD_URL, { timeout: 10000 });
   return data;
 }
 
-export async function fetchPlayByPlay(gameId: string): Promise<any> {
-  const { data } = await axios.get(PLAYBYPLAY_URL(gameId), { timeout: 10000 });
-  return data;
+export async function fetchPlayByPlay(gameId: string, timestamp?: number): Promise<any> {
+  // Use test data if gameId is TEST001 (case insensitive)
+  if (gameId.toUpperCase() === 'TEST001') {
+    return getTestGameDataAtTimestamp(timestamp ?? 6);
+  }
+  
+  try {
+    const { data } = await axios.get(PLAYBYPLAY_URL(gameId), { timeout: 10000 });
+    return data;
+  } catch (error) {
+    console.error('Error fetching play-by-play, using test data:', error);
+    return TEST_GAME_DATA;
+  }
+}
+
+export async function fetchBoxScore(gameId: string): Promise<any> {
+  // Use test data if gameId is TEST001 (case insensitive)
+  if (gameId.toUpperCase() === 'TEST001') {
+    return TEST_BOXSCORE_DATA;
+  }
+  
+  try {
+    const { data } = await axios.get(BOXSCORE_URL(gameId), { timeout: 10000 });
+    return data;
+  } catch (error) {
+    console.error('Error fetching boxscore, using test data:', error);
+    return TEST_BOXSCORE_DATA;
+  }
 }
 
 export function simplifyScoreboard(scoreboardJson: any): SimplifiedGame[] {
@@ -47,10 +74,28 @@ export function simplifyScoreboard(scoreboardJson: any): SimplifiedGame[] {
     });
 }
 
-export function parseGameState(playByPlayJson: any): ParsedGameState {
+export function parseGameState(playByPlayJson: any, boxScoreJson?: any): ParsedGameState {
   const game = playByPlayJson?.game ?? {};
   const actions: any[] = Array.isArray(game.actions) ? game.actions : [];
   const lastAction = actions.length ? actions[actions.length - 1] : null;
+
+  // Extract player stats from boxscore
+  const playerStatsMap = new Map<string, any>();
+  if (boxScoreJson?.game) {
+    const homeStats = boxScoreJson.game.homeTeam?.players ?? [];
+    const awayStats = boxScoreJson.game.awayTeam?.players ?? [];
+    [...homeStats, ...awayStats].forEach((p: any) => {
+      if (p.personId) {
+        playerStatsMap.set(p.personId.toString(), {
+          name: p.name || p.nameI || `${p.firstName} ${p.familyName}`,
+          jerseyNum: p.jerseyNum,
+          position: p.position,
+          statistics: p.statistics || {},
+          teamTricode: p.teamTricode
+        });
+      }
+    });
+  }
 
   // Derive score from the latest action when available; fallback to game-level score
   let derivedHome: number | null = null;
@@ -95,18 +140,24 @@ export function parseGameState(playByPlayJson: any): ParsedGameState {
   for (let i = actions.length - 1; i >= 0 && (!shooter || !ballHandler); i--) {
     const a = actions[i];
     if (!shooter && a?.actionType === 'shot') {
+      const personId = a.personId?.toString() || a.playerId?.toString() || a.player1Id?.toString();
+      const boxStats = personId ? playerStatsMap.get(personId) : null;
       shooter = {
-        personId: a.personId?.toString() || a.playerId?.toString() || a.player1Id?.toString(),
+        personId,
         name: a.playerNameI || a.playerName || a.player1Name,
         teamTricode: a.teamTricode || a.teamTricode1 || a.teamTricode2,
-        result: a.shotResult || a.result || null
+        result: a.shotResult || a.result || null,
+        liveStats: boxStats?.statistics
       };
     }
     if (!ballHandler && ['rebound', 'turnover', 'steal', 'shot', 'foul', 'violation'].includes(a?.actionType)) {
+      const personId = a.personId?.toString() || a.playerId?.toString() || a.player1Id?.toString();
+      const boxStats = personId ? playerStatsMap.get(personId) : null;
       ballHandler = {
-        personId: a.personId?.toString() || a.playerId?.toString() || a.player1Id?.toString(),
+        personId,
         name: a.playerNameI || a.playerName || a.player1Name,
-        teamTricode: a.teamTricode || a.teamTricode1 || a.teamTricode2
+        teamTricode: a.teamTricode || a.teamTricode1 || a.teamTricode2,
+        liveStats: boxStats?.statistics
       };
     }
   }

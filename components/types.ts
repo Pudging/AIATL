@@ -32,8 +32,8 @@ export type ParsedGameState = {
   score: { home: number; away: number };
   homeTeam?: string;
   awayTeam?: string;
-  shooter: { personId?: string; name?: string; teamTricode?: string; result?: string } | null;
-  ballHandler: { personId?: string; name?: string; teamTricode?: string } | null;
+  shooter: { personId?: string; name?: string; teamTricode?: string; result?: string; liveStats?: any } | null;
+  ballHandler: { personId?: string; name?: string; teamTricode?: string; liveStats?: any } | null;
   lastAction: any;
   lastShot?: any;
   recentActions?: any[];

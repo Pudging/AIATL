@@ -35,9 +35,40 @@ export default function HomePage() {
 	if (loading) return <div>Loading live games...</div>;
 	if (error) return <div className="text-red-400">{error}</div>;
 
+	// Add test game if no live games
+	const testGame: SimplifiedGame = {
+		id: 'test001',
+		status: 2,
+		statusText: 'TEST GAME',
+		period: 2,
+		gameClock: 'PT05M23.00S',
+		home: {
+			name: 'Lakers',
+			tricode: 'LAL',
+			id: 1610612747,
+			score: 58,
+			logo: 'https://cdn.nba.com/logos/nba/1610612747/global/L/logo.svg'
+		},
+		away: {
+			name: 'Celtics',
+			tricode: 'BOS',
+			id: 1610612738,
+			score: 62,
+			logo: 'https://cdn.nba.com/logos/nba/1610612738/global/L/logo.svg'
+		}
+	};
+
+	const allGames = games.length > 0 ? games : [testGame];
+
 	return (
-		<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-			{games.map((g) => (
+		<div>
+			{games.length === 0 && (
+				<div className="mb-4 p-4 bg-yellow-500/20 border border-yellow-500/50 rounded-lg text-sm">
+					No live games right now. Showing test game for demo purposes.
+				</div>
+			)}
+			<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+			{allGames.map((g) => (
 				<Link key={g.id} href={`/game/${g.id}`} className="glass rounded-xl p-4 hover:bg-white/15 transition">
 					<div className="flex items-center gap-3">
 						<img src={g.away.logo} alt={g.away.tricode} className="w-10 h-10" />
@@ -64,6 +95,7 @@ export default function HomePage() {
 					</div>
 				</Link>
 			))}
+			</div>
 		</div>
 	);
 }

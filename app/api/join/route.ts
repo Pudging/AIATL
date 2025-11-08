@@ -33,6 +33,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       gameId: (gs as any).gameId,
+      gameSessionId: (gs as any)._id.toString(),
       assignment: { slot: existing.slot },
     });
   }
@@ -51,6 +52,7 @@ export async function POST(req: Request) {
     gameSessionId: (gs as any)._id.toString(),
     userId: session.user.id,
     slot: available,
+    points: 0,
     joinedAt: new Date(),
   };
   await playerAssignments.insertOne(toInsert);
@@ -58,6 +60,7 @@ export async function POST(req: Request) {
   return NextResponse.json({
     ok: true,
     gameId: (gs as any).gameId,
+    gameSessionId: (gs as any)._id.toString(),
     assignment: { slot: available },
   });
 }

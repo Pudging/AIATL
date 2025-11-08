@@ -8,7 +8,10 @@ type TutorialOverlayProps = {
   onClose: () => void;
 };
 
-export default function TutorialOverlay({ show, onClose }: TutorialOverlayProps) {
+export default function TutorialOverlay({
+  show,
+  onClose,
+}: TutorialOverlayProps) {
   const [currentPage, setCurrentPage] = useState(0);
 
   const pages = [
@@ -21,7 +24,9 @@ export default function TutorialOverlay({ show, onClose }: TutorialOverlayProps)
             Use your webcam to predict NBA shots in real-time and earn points!
           </p>
           <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-6">
-            <h3 className="mb-3 text-xl font-bold text-emerald-300">How It Works</h3>
+            <h3 className="mb-3 text-xl font-bold text-emerald-300">
+              How It Works
+            </h3>
             <ol className="space-y-3 text-slate-200">
               <li className="flex items-start gap-3">
                 <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-sm font-bold text-emerald-300">
@@ -33,7 +38,10 @@ export default function TutorialOverlay({ show, onClose }: TutorialOverlayProps)
                 <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-sm font-bold text-emerald-300">
                   2
                 </span>
-                <span>When you see "SHOT INCOMING", make a shooting gesture</span>
+                <span>
+                  When you see &quot;SHOT INCOMING&quot;, make a shooting
+                  gesture
+                </span>
               </li>
               <li className="flex items-start gap-3">
                 <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-sm font-bold text-emerald-300">
@@ -54,31 +62,79 @@ export default function TutorialOverlay({ show, onClose }: TutorialOverlayProps)
           <p className="text-slate-200">
             Match the shot type for bonus multipliers!
           </p>
-          
+
           {/* Normal Shot */}
           <div className="rounded-lg border border-blue-400/30 bg-blue-500/10 p-6">
-            <h3 className="mb-4 text-lg font-bold text-blue-300">Normal Shot</h3>
+            <h3 className="mb-4 text-lg font-bold text-blue-300">
+              Normal Shot
+            </h3>
             <div className="flex items-center gap-6">
               <div className="flex-1">
                 <svg className="h-48 w-full" viewBox="0 0 200 300" fill="none">
                   {/* Head */}
-                  <circle cx="100" cy="40" r="20" fill="#60A5FA" opacity="0.8" />
+                  <circle
+                    cx="100"
+                    cy="40"
+                    r="20"
+                    fill="#60A5FA"
+                    opacity="0.8"
+                  />
                   {/* Body */}
-                  <line x1="100" y1="60" x2="100" y2="150" stroke="#60A5FA" strokeWidth="6" />
+                  <line
+                    x1="100"
+                    y1="60"
+                    x2="100"
+                    y2="150"
+                    stroke="#60A5FA"
+                    strokeWidth="6"
+                  />
                   {/* Arms (both raised) */}
-                  <line x1="100" y1="80" x2="60" y2="40" stroke="#60A5FA" strokeWidth="6" />
-                  <line x1="100" y1="80" x2="140" y2="40" stroke="#60A5FA" strokeWidth="6" />
+                  <line
+                    x1="100"
+                    y1="80"
+                    x2="60"
+                    y2="40"
+                    stroke="#60A5FA"
+                    strokeWidth="6"
+                  />
+                  <line
+                    x1="100"
+                    y1="80"
+                    x2="140"
+                    y2="40"
+                    stroke="#60A5FA"
+                    strokeWidth="6"
+                  />
                   {/* Legs */}
-                  <line x1="100" y1="150" x2="80" y2="200" stroke="#60A5FA" strokeWidth="6" />
-                  <line x1="100" y1="150" x2="120" y2="200" stroke="#60A5FA" strokeWidth="6" />
+                  <line
+                    x1="100"
+                    y1="150"
+                    x2="80"
+                    y2="200"
+                    stroke="#60A5FA"
+                    strokeWidth="6"
+                  />
+                  <line
+                    x1="100"
+                    y1="150"
+                    x2="120"
+                    y2="200"
+                    stroke="#60A5FA"
+                    strokeWidth="6"
+                  />
                   {/* Hands */}
                   <circle cx="60" cy="40" r="6" fill="#60A5FA" />
                   <circle cx="140" cy="40" r="6" fill="#60A5FA" />
                 </svg>
               </div>
               <div className="flex-1 text-sm text-slate-200">
-                <p className="font-semibold text-blue-300 mb-2">Both arms raised above head</p>
-                <p>Classic jump shot form. Raise both arms above your head as if shooting a basketball.</p>
+                <p className="font-semibold text-blue-300 mb-2">
+                  Both arms raised above head
+                </p>
+                <p>
+                  Classic jump shot form. Raise both arms above your head as if
+                  shooting a basketball.
+                </p>
               </div>
             </div>
           </div>
@@ -90,23 +146,69 @@ export default function TutorialOverlay({ show, onClose }: TutorialOverlayProps)
               <div className="flex-1">
                 <svg className="h-48 w-full" viewBox="0 0 200 300" fill="none">
                   {/* Head */}
-                  <circle cx="100" cy="40" r="20" fill="#FBBF24" opacity="0.8" />
+                  <circle
+                    cx="100"
+                    cy="40"
+                    r="20"
+                    fill="#FBBF24"
+                    opacity="0.8"
+                  />
                   {/* Body */}
-                  <line x1="100" y1="60" x2="100" y2="150" stroke="#FBBF24" strokeWidth="6" />
+                  <line
+                    x1="100"
+                    y1="60"
+                    x2="100"
+                    y2="150"
+                    stroke="#FBBF24"
+                    strokeWidth="6"
+                  />
                   {/* Arms (one raised at angle) */}
-                  <line x1="100" y1="80" x2="140" y2="50" stroke="#FBBF24" strokeWidth="6" />
-                  <line x1="100" y1="80" x2="70" y2="120" stroke="#FBBF24" strokeWidth="6" />
+                  <line
+                    x1="100"
+                    y1="80"
+                    x2="140"
+                    y2="50"
+                    stroke="#FBBF24"
+                    strokeWidth="6"
+                  />
+                  <line
+                    x1="100"
+                    y1="80"
+                    x2="70"
+                    y2="120"
+                    stroke="#FBBF24"
+                    strokeWidth="6"
+                  />
                   {/* Legs */}
-                  <line x1="100" y1="150" x2="80" y2="200" stroke="#FBBF24" strokeWidth="6" />
-                  <line x1="100" y1="150" x2="120" y2="200" stroke="#FBBF24" strokeWidth="6" />
+                  <line
+                    x1="100"
+                    y1="150"
+                    x2="80"
+                    y2="200"
+                    stroke="#FBBF24"
+                    strokeWidth="6"
+                  />
+                  <line
+                    x1="100"
+                    y1="150"
+                    x2="120"
+                    y2="200"
+                    stroke="#FBBF24"
+                    strokeWidth="6"
+                  />
                   {/* Hands */}
                   <circle cx="140" cy="50" r="6" fill="#FBBF24" />
                   <circle cx="70" cy="120" r="6" fill="#FBBF24" />
                 </svg>
               </div>
               <div className="flex-1 text-sm text-slate-200">
-                <p className="font-semibold text-yellow-300 mb-2">One arm extended at angle</p>
-                <p>Reach up with one arm extended, mimicking a layup motion toward the basket.</p>
+                <p className="font-semibold text-yellow-300 mb-2">
+                  One arm extended at angle
+                </p>
+                <p>
+                  Reach up with one arm extended, mimicking a layup motion
+                  toward the basket.
+                </p>
               </div>
             </div>
           </div>
@@ -118,23 +220,67 @@ export default function TutorialOverlay({ show, onClose }: TutorialOverlayProps)
               <div className="flex-1">
                 <svg className="h-48 w-full" viewBox="0 0 200 300" fill="none">
                   {/* Head */}
-                  <circle cx="100" cy="40" r="20" fill="#A78BFA" opacity="0.8" />
+                  <circle
+                    cx="100"
+                    cy="40"
+                    r="20"
+                    fill="#A78BFA"
+                    opacity="0.8"
+                  />
                   {/* Body */}
-                  <line x1="100" y1="60" x2="100" y2="150" stroke="#A78BFA" strokeWidth="6" />
+                  <line
+                    x1="100"
+                    y1="60"
+                    x2="100"
+                    y2="150"
+                    stroke="#A78BFA"
+                    strokeWidth="6"
+                  />
                   {/* Arms (one hand going right then up to top of head) */}
-                  <path d="M 100 80 Q 130 70, 110 15" stroke="#A78BFA" strokeWidth="6" fill="none" />
-                  <line x1="100" y1="80" x2="70" y2="120" stroke="#A78BFA" strokeWidth="6" />
+                  <path
+                    d="M 100 80 Q 130 70, 110 15"
+                    stroke="#A78BFA"
+                    strokeWidth="6"
+                    fill="none"
+                  />
+                  <line
+                    x1="100"
+                    y1="80"
+                    x2="70"
+                    y2="120"
+                    stroke="#A78BFA"
+                    strokeWidth="6"
+                  />
                   {/* Legs */}
-                  <line x1="100" y1="150" x2="80" y2="200" stroke="#A78BFA" strokeWidth="6" />
-                  <line x1="100" y1="150" x2="120" y2="200" stroke="#A78BFA" strokeWidth="6" />
+                  <line
+                    x1="100"
+                    y1="150"
+                    x2="80"
+                    y2="200"
+                    stroke="#A78BFA"
+                    strokeWidth="6"
+                  />
+                  <line
+                    x1="100"
+                    y1="150"
+                    x2="120"
+                    y2="200"
+                    stroke="#A78BFA"
+                    strokeWidth="6"
+                  />
                   {/* Hands */}
                   <circle cx="110" cy="15" r="8" fill="#A78BFA" />
                   <circle cx="70" cy="120" r="6" fill="#A78BFA" />
                 </svg>
               </div>
               <div className="flex-1 text-sm text-slate-200">
-                <p className="font-semibold text-purple-300 mb-2">One hand on top of head</p>
-                <p>Place one hand on or around the top/crown of your head, like celebrating a massive dunk!</p>
+                <p className="font-semibold text-purple-300 mb-2">
+                  One hand on top of head
+                </p>
+                <p>
+                  Place one hand on or around the top/crown of your head, like
+                  celebrating a massive dunk!
+                </p>
               </div>
             </div>
           </div>
@@ -147,11 +293,15 @@ export default function TutorialOverlay({ show, onClose }: TutorialOverlayProps)
       content: (
         <div className="space-y-6">
           <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-6">
-            <h3 className="mb-4 text-xl font-bold text-emerald-300">Base Points</h3>
+            <h3 className="mb-4 text-xl font-bold text-emerald-300">
+              Base Points
+            </h3>
             <div className="space-y-3 text-slate-200">
               <div className="flex items-center justify-between">
                 <span>Correct prediction (shot made):</span>
-                <span className="font-bold text-emerald-300">+1,000 points</span>
+                <span className="font-bold text-emerald-300">
+                  +1,000 points
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Incorrect prediction (shot missed):</span>
@@ -161,45 +311,71 @@ export default function TutorialOverlay({ show, onClose }: TutorialOverlayProps)
           </div>
 
           <div className="rounded-lg border border-blue-400/30 bg-blue-500/10 p-6">
-            <h3 className="mb-4 text-xl font-bold text-blue-300">Multipliers</h3>
-            
+            <h3 className="mb-4 text-xl font-bold text-blue-300">
+              Multipliers
+            </h3>
+
             <div className="mb-4 space-y-2">
               <div className="flex items-center gap-2">
-                <div className="flex h-6 w-6 items-center justify-center rounded bg-blue-500/30 text-xs font-bold">1</div>
-                <span className="font-semibold text-blue-200">Shot Type Match</span>
+                <div className="flex h-6 w-6 items-center justify-center rounded bg-blue-500/30 text-xs font-bold">
+                  1
+                </div>
+                <span className="font-semibold text-blue-200">
+                  Shot Type Match
+                </span>
               </div>
               <p className="ml-8 text-sm text-slate-300">
-                Match the exact shot type (normal/layup/dunk) for <span className="font-bold text-blue-300">2x multiplier</span>
+                Match the exact shot type (normal/layup/dunk) for{" "}
+                <span className="font-bold text-blue-300">2x multiplier</span>
               </p>
             </div>
 
             <div className="mb-4 space-y-2">
               <div className="flex items-center gap-2">
-                <div className="flex h-6 w-6 items-center justify-center rounded bg-blue-500/30 text-xs font-bold">2</div>
-                <span className="font-semibold text-blue-200">Streak Bonus</span>
+                <div className="flex h-6 w-6 items-center justify-center rounded bg-blue-500/30 text-xs font-bold">
+                  2
+                </div>
+                <span className="font-semibold text-blue-200">
+                  Streak Bonus
+                </span>
               </div>
               <p className="ml-8 text-sm text-slate-300">
-                Each correct prediction adds <span className="font-bold text-blue-300">+0.2x</span> (1.0x → 1.2x → 1.4x...)
+                Each correct prediction adds{" "}
+                <span className="font-bold text-blue-300">+0.2x</span> (1.0x →
+                1.2x → 1.4x...)
               </p>
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <div className="flex h-6 w-6 items-center justify-center rounded bg-purple-500/30 text-xs font-bold">3</div>
-                <span className="font-semibold text-purple-200">Player Odds</span>
+                <div className="flex h-6 w-6 items-center justify-center rounded bg-purple-500/30 text-xs font-bold">
+                  3
+                </div>
+                <span className="font-semibold text-purple-200">
+                  Player Odds
+                </span>
               </div>
               <p className="ml-8 text-sm text-slate-300 mb-2">
-                <span className="font-bold text-purple-300">NEW!</span> Multipliers based on player shooting %:
+                <span className="font-bold text-purple-300">NEW!</span>{" "}
+                Multipliers based on player shooting %:
               </p>
               <div className="ml-8 space-y-1 text-xs text-slate-400">
-                <div>• <span className="text-emerald-300">Good shooters</span>: Lower rewards (0.8x-1.4x), higher losses (1.5x-2.4x)</div>
-                <div>• <span className="text-yellow-300">Streaky shooters</span>: Higher rewards (1.3x-2.4x), lower losses (0.6x-1.0x)</div>
+                <div>
+                  • <span className="text-emerald-300">Good shooters</span>:
+                  Lower rewards (0.8x-1.4x), higher losses (1.5x-2.4x)
+                </div>
+                <div>
+                  • <span className="text-yellow-300">Streaky shooters</span>:
+                  Higher rewards (1.3x-2.4x), lower losses (0.6x-1.0x)
+                </div>
               </div>
             </div>
           </div>
 
           <div className="rounded-lg border border-yellow-400/30 bg-yellow-500/10 p-6">
-            <h3 className="mb-4 text-xl font-bold text-yellow-300">Example Calculation</h3>
+            <h3 className="mb-4 text-xl font-bold text-yellow-300">
+              Example Calculation
+            </h3>
             <div className="space-y-2 text-sm text-slate-200">
               <div className="flex justify-between">
                 <span>Base points:</span>
@@ -266,7 +442,7 @@ export default function TutorialOverlay({ show, onClose }: TutorialOverlayProps)
             {/* Header */}
             <div className="border-b border-emerald-400/30 bg-emerald-500/10 px-8 py-6">
               <h2 className="text-3xl font-bold text-emerald-300">
-                {pages[currentPage].title}
+                {pages[currentPage]?.title}
               </h2>
               <div className="mt-3 flex gap-2">
                 {pages.map((_, idx) => (
@@ -294,7 +470,7 @@ export default function TutorialOverlay({ show, onClose }: TutorialOverlayProps)
                   exit={{ opacity: 0, x: -20 }}
                   transition={{ duration: 0.3 }}
                 >
-                  {pages[currentPage].content}
+                  {pages[currentPage]?.content}
                 </motion.div>
               </AnimatePresence>
             </div>
@@ -308,7 +484,7 @@ export default function TutorialOverlay({ show, onClose }: TutorialOverlayProps)
                 >
                   {currentPage === 0 ? "Close" : "Back"}
                 </button>
-                
+
                 <div className="text-sm text-slate-400">
                   Page {currentPage + 1} of {pages.length}
                 </div>
@@ -356,4 +532,3 @@ export default function TutorialOverlay({ show, onClose }: TutorialOverlayProps)
     </AnimatePresence>
   );
 }
-

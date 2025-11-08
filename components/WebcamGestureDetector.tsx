@@ -11,7 +11,11 @@ import {
 import * as posedetection from "@tensorflow-models/pose-detection";
 import "@tensorflow/tfjs-backend-webgl";
 import * as tf from "@tensorflow/tfjs";
-import { analyzeMotionWithGemini, movenetPoseToFrame, type PoseFrame } from "@/lib/gemini";
+import {
+  analyzeMotionWithGemini,
+  movenetPoseToFrame,
+  type PoseFrame,
+} from "@/lib/gemini";
 
 const PLAYER_LABELS = ["Left Player", "Right Player", "Center Player"] as const;
 type PlayerLabel = (typeof PLAYER_LABELS)[number];
@@ -35,7 +39,7 @@ type GeminiAnalysis = {
   classification: string;
   confidence: number;
   description: string;
-  suggestedShotType?: 'normal' | 'dunk' | 'layup';
+  suggestedShotType?: "normal" | "dunk" | "layup";
   timestamp: number;
 };
 
@@ -101,28 +105,45 @@ export default function WebcamGestureDetector({
   const gestureCooldownsRef = useRef<Record<PlayerLabel, number>>(
     createPlayerMap(() => 0)
   );
-  
+
   // Gesture state tracking for improved detection
-  const gestureStateRef = useRef<Record<PlayerLabel, {
-    armsUpFrames: number; // How many frames arms have been up
-    lastWristPositions: { left: { x: number; y: number } | null; right: { x: number; y: number } | null };
-    wristFlickDetected: boolean;
-    flickFrame: number; // Frame when flick was detected
-  }>>(createPlayerMap(() => ({
-    armsUpFrames: 0,
-    lastWristPositions: { left: null, right: null },
-    wristFlickDetected: false,
-    flickFrame: 0
-  })));
-  
+  const gestureStateRef = useRef<
+    Record<
+      PlayerLabel,
+      {
+        armsUpFrames: number; // How many frames arms have been up
+        lastWristPositions: {
+          left: { x: number; y: number } | null;
+          right: { x: number; y: number } | null;
+        };
+        wristFlickDetected: boolean;
+        flickFrame: number; // Frame when flick was detected
+      }
+    >
+  >(
+    createPlayerMap(() => ({
+      armsUpFrames: 0,
+      lastWristPositions: { left: null, right: null },
+      wristFlickDetected: false,
+      flickFrame: 0,
+    }))
+  );
+
   // Gesture history for majority voting (last 1-2 seconds)
-  const gestureHistoryRef = useRef<Record<PlayerLabel, Array<{
-    shotType: ShotType;
-    timestamp: number;
-  }>>>(createPlayerMap(() => []));
-  
+  const gestureHistoryRef = useRef<
+    Record<
+      PlayerLabel,
+      Array<{
+        shotType: ShotType;
+        timestamp: number;
+      }>
+    >
+  >(createPlayerMap(() => []));
+
   // Gemini analysis state
-  const [geminiAnalysis, setGeminiAnalysis] = useState<GeminiAnalysis | null>(null);
+  const [geminiAnalysis, setGeminiAnalysis] = useState<GeminiAnalysis | null>(
+    null
+  );
   const useGemini = false; // Feature flag - always disabled for now
   const poseFrameBufferRef = useRef<PoseFrame[]>([]); // Buffer for collecting frames
   const eventsRef = useRef<
@@ -512,7 +533,7 @@ export default function WebcamGestureDetector({
       resetDebugInfo(playerLabel);
       return false;
     }
-    
+
     // If we have NO elbows or wrists, can't detect shot
     if ((!le && !re) || (!lw && !rw)) {
       resetDebugInfo(playerLabel);
@@ -521,32 +542,32 @@ export default function WebcamGestureDetector({
 
     // MORE LENIENT: Check if arms are up (allow detection with just one good arm)
     const headLevel = nose ? nose.y : Math.min(ls.y, rs.y) - 25; // Use nose or estimate head position
-    
+
     // Check each arm independently (more forgiving of poor detection)
-    const leftElbowUp = le ? (le.y < headLevel || le.y < ls.y - 10) : false;
-    const rightElbowUp = re ? (re.y < headLevel || re.y < rs.y - 10) : false;
-    const leftWristUp = lw ? (lw.y < headLevel || lw.y < ls.y - 10) : false;
-    const rightWristUp = rw ? (rw.y < headLevel || rw.y < rs.y - 10) : false;
-    
+    const leftElbowUp = le ? le.y < headLevel || le.y < ls.y - 10 : false;
+    const rightElbowUp = re ? re.y < headLevel || re.y < rs.y - 10 : false;
+    const leftWristUp = lw ? lw.y < headLevel || lw.y < ls.y - 10 : false;
+    const rightWristUp = rw ? rw.y < headLevel || rw.y < rs.y - 10 : false;
+
     // At least one arm should be up (more lenient)
     const elbowsUp = leftElbowUp || rightElbowUp;
     const wristsUp = leftWristUp || rightWristUp;
-    
+
     // Both arms up if we have both (ideal case)
     const bothElbowsUp = leftElbowUp && rightElbowUp;
     const bothWristsUp = leftWristUp && rightWristUp;
-    
+
     // Check for dunk gesture (hand on head) - but only if NOT in normal shot position
     // Prevent normal shots from being detected as dunks
-    const isDunkGesture = detectDunkGesture(lw, rw, nose) && 
-      !(bothElbowsUp && bothWristsUp); // Don't detect dunk if both arms are clearly up (normal shot)
+    const isDunkGesture =
+      detectDunkGesture(lw, rw, nose) && !(bothElbowsUp && bothWristsUp); // Don't detect dunk if both arms are clearly up (normal shot)
 
     // Check for layup gesture (one arm up)
     const isLayupGesture = detectLayupGesture(lw, rw, le, re, ls, rs);
-    
+
     // MORE LENIENT: Wrists level check - only if we have both wrists
     const wristsLevel = lw && rw ? Math.abs(lw.y - rw.y) < 100 : true; // More lenient tolerance, default true if missing
-    
+
     // MORE LENIENT: Arms extended check - only if we have the keypoints
     const leftArmExtended = le && lw ? le.y < lw.y : true; // Default true if missing
     const rightArmExtended = re && rw ? re.y < rw.y : true; // Default true if missing
@@ -555,21 +576,22 @@ export default function WebcamGestureDetector({
     // MORE LENIENT: Track gesture state over time (reduced requirement)
     const gestureState = gestureStateRef.current[playerLabel];
     const armsUpNow = elbowsUp && wristsUp; // Simplified - just need arms up
-    
+
     if (armsUpNow) {
       gestureState.armsUpFrames++;
     } else {
       gestureState.armsUpFrames = 0;
       gestureState.wristFlickDetected = false;
     }
-    
+
     // MORE LENIENT: Detect wrist flick (lower thresholds for poor pose detection)
     let wristFlickDetected = false;
-    if (armsUpNow && prevPose && (lw || rw)) { // Only need one wrist
+    if (armsUpNow && prevPose && (lw || rw)) {
+      // Only need one wrist
       const prevK = byName(prevPose);
       const prevLw = prevK["left_wrist"];
       const prevRw = prevK["right_wrist"];
-      
+
       // Check left wrist if available
       if (lw && prevLw) {
         const leftForward = lw.x - prevLw.x;
@@ -578,7 +600,7 @@ export default function WebcamGestureDetector({
         const leftFlick = leftForward > 0.01 || leftUpward > 0.005;
         if (leftFlick) wristFlickDetected = true;
       }
-      
+
       // Check right wrist if available
       if (rw && prevRw) {
         const rightForward = prevRw.x - rw.x;
@@ -587,20 +609,21 @@ export default function WebcamGestureDetector({
         const rightFlick = rightForward > 0.01 || rightUpward > 0.005;
         if (rightFlick) wristFlickDetected = true;
       }
-      
+
       if (wristFlickDetected && !gestureState.wristFlickDetected) {
         gestureState.wristFlickDetected = true;
         gestureState.flickFrame = gestureState.armsUpFrames;
       }
     }
-    
+
     // Determine shot type (more lenient)
     let shotType: ShotType = null;
     if (isDunkGesture) {
       shotType = "dunk";
     } else if (isLayupGesture) {
       shotType = "layup";
-    } else if (armsUpNow) { // Simplified - just need arms up
+    } else if (armsUpNow) {
+      // Simplified - just need arms up
       shotType = "normal";
     }
 
@@ -687,16 +710,23 @@ export default function WebcamGestureDetector({
       // MUCH MORE LENIENT: Normal shot requires:
       // 1. Arms up (at least one arm)
       // 2. EITHER wrist flick detected OR any velocity OR just arms up (very lenient)
-      const flickRecent = gestureState.wristFlickDetected && 
-        (gestureState.armsUpFrames - gestureState.flickFrame) <= flickWindow;
-      
+      const flickRecent =
+        gestureState.wristFlickDetected &&
+        gestureState.armsUpFrames - gestureState.flickFrame <= flickWindow;
+
       // MUCH MORE LENIENT: Very low velocity threshold or just any movement
-      const hasVelocity = velocity > pxPerSecThreshold * 0.5 || 
-                         forwardComponent > pxPerSecThreshold * 0.3 ||
-                         velocity > 0; // Any movement at all
-      
+      const hasVelocity =
+        velocity > pxPerSecThreshold * 0.5 ||
+        forwardComponent > pxPerSecThreshold * 0.3 ||
+        velocity > 0; // Any movement at all
+
       // Decision: arms up AND (flick OR velocity OR just arms up for quick shots)
-      decision = armsUpNow && (wristFlickDetected || flickRecent || hasVelocity || gestureState.armsUpFrames >= 1);
+      decision =
+        armsUpNow &&
+        (wristFlickDetected ||
+          flickRecent ||
+          hasVelocity ||
+          gestureState.armsUpFrames >= 1);
     }
 
     debugInfoRef.current[playerLabel] = {
@@ -706,7 +736,7 @@ export default function WebcamGestureDetector({
       decision,
       shotType,
     };
-    
+
     // Update last wrist positions for next frame (handle missing wrists)
     if (lw) {
       gestureState.lastWristPositions.left = { x: lw.x, y: lw.y };
@@ -714,49 +744,52 @@ export default function WebcamGestureDetector({
     if (rw) {
       gestureState.lastWristPositions.right = { x: rw.x, y: rw.y };
     }
-    
+
     return decision;
   }
-  
+
   function resetGestureState(label: PlayerLabel) {
     gestureStateRef.current[label] = {
       armsUpFrames: 0,
       lastWristPositions: { left: null, right: null },
       wristFlickDetected: false,
-      flickFrame: 0
+      flickFrame: 0,
     };
     // Clear gesture history when resetting
     gestureHistoryRef.current[label] = [];
   }
-  
+
   // Get majority gesture type from recent history (last 1.5 seconds)
-  function getMajorityGesture(label: PlayerLabel, windowMs: number = 1500): ShotType | null {
+  function getMajorityGesture(
+    label: PlayerLabel,
+    windowMs: number = 1500
+  ): ShotType | null {
     const history = gestureHistoryRef.current[label];
     const now = Date.now();
-    
+
     // Filter to recent entries (last 1.5 seconds)
-    const recent = history.filter(entry => now - entry.timestamp < windowMs);
-    
+    const recent = history.filter((entry) => now - entry.timestamp < windowMs);
+
     if (recent.length === 0) return null;
-    
+
     // Count occurrences of each shot type
     const counts: Record<string, number> = {};
-    recent.forEach(entry => {
-      const key = entry.shotType || 'null';
+    recent.forEach((entry) => {
+      const key = entry.shotType || "null";
       counts[key] = (counts[key] || 0) + 1;
     });
-    
+
     // Find the most common shot type
     let maxCount = 0;
     let majorityType: ShotType | null = null;
-    
+
     Object.entries(counts).forEach(([type, count]) => {
-      if (count > maxCount && type !== 'null') {
+      if (count > maxCount && type !== "null") {
         maxCount = count;
         majorityType = type as ShotType;
       }
     });
-    
+
     // Require at least 30% of recent frames to agree (prevents false positives)
     const threshold = Math.max(1, Math.floor(recent.length * 0.3));
     return maxCount >= threshold ? majorityType : null;
@@ -878,14 +911,14 @@ export default function WebcamGestureDetector({
           poses = await detector.estimatePoses(video, opts);
           lastInferTsRef.current = now;
           lastDetectionsRef.current = poses;
-          
+
           // Collect frames for Gemini analysis (keep last 3 seconds at ~30fps = 90 frames)
           if (useGemini && poses.length > 0) {
             const frameNumber = poseFrameBufferRef.current.length;
             const timestamp = now / 1000; // Use absolute timestamp
             const frame = movenetPoseToFrame(poses[0], frameNumber, timestamp);
             poseFrameBufferRef.current.push(frame);
-            
+
             // Keep only last 90 frames (3 seconds)
             if (poseFrameBufferRef.current.length > 90) {
               poseFrameBufferRef.current.shift();
@@ -929,46 +962,50 @@ export default function WebcamGestureDetector({
           const history = gestureHistoryRef.current[label];
           history.push({
             shotType: debugInfo.shotType,
-            timestamp: nowTs
+            timestamp: nowTs,
           });
-          
+
           // Clean old entries (older than 2 seconds)
           const cutoff = nowTs - 2000;
-          gestureHistoryRef.current[label] = history.filter(entry => entry.timestamp > cutoff);
+          gestureHistoryRef.current[label] = history.filter(
+            (entry) => entry.timestamp > cutoff
+          );
         }
 
         if (decision) {
           showShotIndicator(label);
         }
-        
+
         const cooldownUntil = gestureCooldownsRef.current[label] ?? 0;
         if (nowTs >= cooldownUntil && decision) {
           // Use majority voting instead of last frame's shot type
           const majorityShotType = getMajorityGesture(label, 1500);
-          
+
           if (majorityShotType) {
             gestureCooldownsRef.current[label] = nowTs + 1500;
             onShootGesture?.(label, majorityShotType);
-            
+
             // Clear history after triggering to prevent re-triggering
             gestureHistoryRef.current[label] = [];
-            
+
             // Trigger Gemini analysis if enabled
             if (useGemini && poseFrameBufferRef.current.length > 0) {
               const framesToAnalyze = [...poseFrameBufferRef.current];
-              analyzeMotionWithGemini(framesToAnalyze, true).then((analysis) => {
-                if (analysis) {
-                  setGeminiAnalysis({
-                    ...analysis,
-                    timestamp: Date.now()
-                  });
-                  console.log('[Gemini] Analysis:', analysis);
-                }
-              }).catch((error) => {
-                console.error('[Gemini] Analysis failed:', error);
-              });
+              analyzeMotionWithGemini(framesToAnalyze, true)
+                .then((analysis) => {
+                  if (analysis) {
+                    setGeminiAnalysis({
+                      ...analysis,
+                      timestamp: Date.now(),
+                    });
+                    console.log("[Gemini] Analysis:", analysis);
+                  }
+                })
+                .catch((error) => {
+                  console.error("[Gemini] Analysis failed:", error);
+                });
             }
-            
+
             if (debug) {
               const shotTypeLabel = majorityShotType
                 ? ` (${majorityShotType.toUpperCase()})`
@@ -1097,28 +1134,33 @@ export default function WebcamGestureDetector({
         </div>
       </div>
       {extraContent ? <div>{extraContent}</div> : null}
-      <div className="flex flex-col gap-2 border border-white/15 bg-black/40 p-4 text-sm text-slate-200 shadow-[0_18px_38px_rgba(0,0,0,0.55)]">
-        <label className="font-semibold uppercase tracking-[0.3em] text-emerald-100">
-          Active Players: {playerCount === 3 ? "3+" : playerCount}
-        </label>
-        <input
-          type="range"
-          min={1}
-          max={3}
-          value={playerCount}
-          onChange={(event) =>
-            setPlayerCount(
-              Math.min(3, Math.max(1, Number(event.target.value))) as 1 | 2 | 3
-            )
-          }
-          className="mlb-range w-full cursor-pointer"
-        />
-        <div className="flex justify-between text-[11px] uppercase tracking-[0.3em] text-slate-400">
-          <span>1</span>
-          <span>2</span>
-          <span>3+</span>
+      {activeLabelsOverride === undefined && (
+        <div className="flex flex-col gap-2 border border-white/15 bg-black/40 p-4 text-sm text-slate-200 shadow-[0_18px_38px_rgba(0,0,0,0.55)]">
+          <label className="font-semibold uppercase tracking-[0.3em] text-emerald-100">
+            Active Players: {playerCount === 3 ? "3+" : playerCount}
+          </label>
+          <input
+            type="range"
+            min={1}
+            max={3}
+            value={playerCount}
+            onChange={(event) =>
+              setPlayerCount(
+                Math.min(3, Math.max(1, Number(event.target.value))) as
+                  | 1
+                  | 2
+                  | 3
+              )
+            }
+            className="mlb-range w-full cursor-pointer"
+          />
+          <div className="flex justify-between text-[11px] uppercase tracking-[0.3em] text-slate-400">
+            <span>1</span>
+            <span>2</span>
+            <span>3+</span>
+          </div>
         </div>
-      </div>
+      )}
       {lanePoints ? (
         <div className="flex items-stretch justify-between gap-3">
           {activeLabels.map((label) => {
@@ -1182,7 +1224,7 @@ export default function WebcamGestureDetector({
           </div>
         </div>
       ) : null}
-      
+
       {/* Gemini Analysis Display - Hidden for now (disabled) */}
     </div>
   );

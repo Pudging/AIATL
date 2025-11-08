@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
 import Image from "next/image";
@@ -227,6 +227,11 @@ export default function GameViewPage() {
   const POINT_DELTA = 1000;
   const params = useParams<{ id: string }>();
   const id = params.id;
+  const searchParams = useSearchParams();
+  const sessionIdParam = searchParams?.get("sessionId") ?? null;
+
+  // Audio ref for win sound
+  const winAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Audio system
   const soundBankRef = useRef<Record<SoundBankKey, Howl | undefined>>({
@@ -545,13 +550,24 @@ export default function GameViewPage() {
     >
   >({ 0: null, 1: null, 2: null });
   const [webcamReady, setWebcamReady] = useState(false);
+  const [otherHosts, setOtherHosts] = useState<
+    Array<{
+      id: string;
+      joinCode: string;
+      players: Array<{
+        slot: number;
+        points: number;
+        user: { id: string; name: string | null; image: string | null };
+      }>;
+    }>
+  >([]);
   const assignedLabels = useMemo<PlayerLabel[]>(() => {
     const labels: PlayerLabel[] = [];
     if (playersBySlot[0]) labels.push("Left Player");
     if (playersBySlot[1]) labels.push("Center Player");
     if (playersBySlot[2]) labels.push("Right Player");
-    return labels.length > 0 ? labels : activeLabels;
-  }, [playersBySlot, activeLabels]);
+    return labels;
+  }, [playersBySlot]);
   const stateQueueRef = useRef<{ state: ParsedGameState; timestamp: number }[]>(
     []
   );
@@ -753,7 +769,12 @@ export default function GameViewPage() {
     let cancelled = false;
     async function fetchSession() {
       try {
-        const res = await fetch(`/api/game-session/${id}`, {
+        const url = sessionIdParam
+          ? `/api/game-session/${id}?sessionId=${encodeURIComponent(
+              sessionIdParam
+            )}`
+          : `/api/game-session/${id}`;
+        const res = await fetch(url, {
           cache: "no-store",
         });
         const data = await res.json();
@@ -767,14 +788,38 @@ export default function GameViewPage() {
             number,
             { id: string; name?: string; image?: string } | null
           > = { 0: null, 1: null, 2: null };
+          const pointsInit: Record<PlayerLabel, number> = {
+            "Left Player": 0,
+            "Right Player": 0,
+            "Center Player": 0,
+          };
           (data.players ?? []).forEach((p: any) => {
             next[p.slot] = {
               id: p.user.id,
               name: p.user.name,
               image: p.user.image,
             };
+            const pts = typeof p.points === "number" ? p.points : 0;
+            if (p.slot === 0) pointsInit["Left Player"] = pts;
+            if (p.slot === 1) pointsInit["Center Player"] = pts;
+            if (p.slot === 2) pointsInit["Right Player"] = pts;
           });
           setPlayersBySlot(next);
+          // Sync local display points to server values so all hosts match
+          setPointsByPlayer((prev) => ({ ...prev, ...pointsInit }));
+          // Also fetch other hosts' sessions for this game
+          try {
+            const allRes = await fetch(`/api/game-session/${id}/all`, {
+              cache: "no-store",
+            });
+            const allData = await allRes.json();
+            if (allRes.ok && Array.isArray(allData.sessions)) {
+              const others = allData.sessions.filter(
+                (s: any) => s.id !== data.id
+              );
+              setOtherHosts(others);
+            }
+          } catch {}
         } else {
           console.error("[JOIN CODE] API error:", data);
         }
@@ -788,7 +833,7 @@ export default function GameViewPage() {
       cancelled = true;
       if (timer) clearInterval(timer);
     };
-  }, [id]);
+  }, [id, sessionIdParam]);
 
   // Update current time
   useEffect(() => {
@@ -1272,7 +1317,7 @@ export default function GameViewPage() {
             return next;
           });
 
-          // Update points
+          // Update points (local)
           setPointsByPlayer((prev) => {
             const next = { ...prev };
             labelsWithPrediction.forEach((label) => {
@@ -1280,6 +1325,20 @@ export default function GameViewPage() {
             });
             return next;
           });
+          // Persist points to server so other hosts stay in sync
+          if (gameSessionId) {
+            const updates = labelsWithPrediction.map((label) => {
+              const slot =
+                label === "Left Player" ? 0 : label === "Center Player" ? 1 : 2;
+              const delta = playerDeltas[label];
+              return fetch("/api/session-points", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ gameSessionId, slot, delta }),
+              }).catch(() => {});
+            });
+            Promise.all(updates).catch(() => {});
+          }
 
           // Play sounds and show effects based on result
           if (isMade) {
@@ -2170,13 +2229,13 @@ export default function GameViewPage() {
               extraContent={
                 <>
                   <div className="flex flex-wrap items-stretch justify-center gap-2 md:gap-3 w-full max-w-7xl mx-auto px-2">
-                    {activeLabels.map((label) => {
+                    {assignedLabels.map((label) => {
                       const points = pointsByPlayer[label] ?? 0;
                       const digitCount = points.toLocaleString().length;
                       const playerCount = assignedLabels.length;
 
                       // Determine if this player is winning/losing for color coding
-                      const allPoints = activeLabels.map(
+                      const allPoints = assignedLabels.map(
                         (l) => pointsByPlayer[l] ?? 0
                       );
                       const maxPoints = Math.max(...allPoints);
@@ -2297,12 +2356,14 @@ export default function GameViewPage() {
                                             : 2,
                                       }),
                                     });
-                                    const res = await fetch(
-                                      `/api/game-session/${id}`,
-                                      {
-                                        cache: "no-store",
-                                      }
-                                    );
+                                    const refetchUrl = sessionIdParam
+                                      ? `/api/game-session/${id}?sessionId=${encodeURIComponent(
+                                          sessionIdParam
+                                        )}`
+                                      : `/api/game-session/${id}`;
+                                    const res = await fetch(refetchUrl, {
+                                      cache: "no-store",
+                                    });
                                     const data = await res.json();
                                     const next: Record<
                                       number,
@@ -2367,25 +2428,42 @@ export default function GameViewPage() {
                       );
                     })}
                   </div>
-                  <div className="rounded-xl border border-[#1e2f46] bg-[#0b1527] p-4 text-sm text-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.55)]">
-                    <div className="flex items-center justify-between font-semibold uppercase tracking-[0.2em] text-emerald-200/80">
-                      <span>Stream Delay (seconds)</span>
-                      <span>{streamDelay}s</span>
+                  {otherHosts.length > 0 && (
+                    <div className="mt-4 w-full max-w-7xl mx-auto px-2">
+                      <div className="mb-2 text-xs uppercase tracking-[0.35em] text-white/60">
+                        Other Hosts
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {otherHosts.map((host) => (
+                          <div
+                            key={host.id}
+                            className="rounded-xl border border-white/10 bg-black/35 p-3"
+                          >
+                            <div className="mb-2 flex items-center justify-between">
+                              <div className="text-[10px] uppercase tracking-[0.35em] text-white/50">
+                                Join: {host.joinCode}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {host.players.map((p) => (
+                                <div
+                                  key={`${host.id}-${p.slot}`}
+                                  className="flex-1 min-w-[130px] rounded border border-white/10 bg-[#0d1b31] px-3 py-2"
+                                >
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-white/70">
+                                    {p.user.name ?? `Player ${p.slot + 1}`}
+                                  </div>
+                                  <div className="mt-1 text-2xl font-black text-white">
+                                    {p.points.toLocaleString()}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={30}
-                      step={1}
-                      value={streamDelay}
-                      onChange={(e) => setStreamDelay(Number(e.target.value))}
-                      className="mt-3 h-2 w-full cursor-pointer appearance-none bg-[#1d2f46] accent-emerald-400"
-                    />
-                    <div className="mt-2 text-xs uppercase tracking-[0.2em] text-slate-300/70">
-                      Popup appears {Math.max(0, streamDelay - 3)}s before shot
-                      on your stream
-                    </div>
-                  </div>
+                  )}
                 </>
               }
               onActiveLabelsChange={(labels: PlayerLabel[]) =>

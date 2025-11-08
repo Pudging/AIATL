@@ -1,343 +1,734 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import * as posedetection from '@tensorflow-models/pose-detection';
-import '@tensorflow/tfjs-backend-webgl';
-import * as tf from '@tensorflow/tfjs';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as posedetection from "@tensorflow-models/pose-detection";
+import "@tensorflow/tfjs-backend-webgl";
+import * as tf from "@tensorflow/tfjs";
+
+const PLAYER_LABELS = ["Left Player", "Right Player", "Center Player"] as const;
+type PlayerLabel = (typeof PLAYER_LABELS)[number];
+const PLAYER_LAYOUTS: Record<1 | 2 | 3, PlayerLabel[]> = {
+  1: ["Center Player"],
+  2: ["Left Player", "Right Player"],
+  3: ["Left Player", "Center Player", "Right Player"],
+};
+
+type DebugInfo = {
+  elbowsUp: boolean;
+  wristsUp: boolean;
+  velocity: number;
+  decision: boolean;
+};
+
+const PLAYER_COLORS: Record<PlayerLabel, string> = {
+  "Left Player": "rgba(59, 130, 246, 0.9)",
+  "Right Player": "rgba(249, 115, 22, 0.9)",
+  "Center Player": "rgba(16, 185, 129, 0.9)",
+};
+const PLAYER_ACCENT_COLORS: Record<PlayerLabel, string> = {
+  "Left Player": "#3b82f6",
+  "Right Player": "#f97316",
+  "Center Player": "#10b981",
+};
+
+function createPlayerMap<T>(initializer: (label: PlayerLabel) => T) {
+  return PLAYER_LABELS.reduce((acc, label) => {
+    acc[label] = initializer(label);
+    return acc;
+  }, {} as Record<PlayerLabel, T>);
+}
 
 type Props = {
-  onShootGesture?: () => void;
+  onShootGesture?: (player?: PlayerLabel) => void;
   debug?: boolean;
 };
 
-export default function WebcamGestureDetector({ onShootGesture, debug = true }: Props) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+export default function WebcamGestureDetector({
+  onShootGesture,
+  debug = true,
+}: Props) {
+  const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
+  const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
   const detectorRef = useRef<posedetection.PoseDetector | null>(null);
-  const lastKeypointsRef = useRef<posedetection.Pose[]>([]);
+  const lastDetectionsRef = useRef<posedetection.Pose[]>([]);
+  const lastPlayerPosesRef = useRef<
+    Record<PlayerLabel, posedetection.Pose | null>
+  >(createPlayerMap(() => null));
   const lastInferTsRef = useRef<number>(0);
-  const debugInfoRef = useRef<{ elbowsUp: boolean; wristsUp: boolean; velocity: number; decision: boolean }>({ elbowsUp: false, wristsUp: false, velocity: 0, decision: false });
-  const eventsRef = useRef<{ ts: number; label: string }[]>([]);
+  const debugInfoRef = useRef<Record<PlayerLabel, DebugInfo>>(
+    createPlayerMap(() => ({
+      elbowsUp: false,
+      wristsUp: false,
+      velocity: 0,
+      decision: false,
+    }))
+  );
+  const gestureCooldownsRef = useRef<Record<PlayerLabel, number>>(
+    createPlayerMap(() => 0)
+  );
+  const eventsRef = useRef<
+    { ts: number; label: string; player: PlayerLabel | null }[]
+  >([]);
   const noPoseFramesRef = useRef<number>(0);
-  const currentModelRef = useRef<'SINGLE_LIGHTNING' | 'SINGLE_THUNDER' | 'MULTI_LIGHTNING'>('SINGLE_LIGHTNING');
+  const currentModelRef = useRef<
+    "SINGLE_LIGHTNING" | "SINGLE_THUNDER" | "MULTI_LIGHTNING"
+  >("MULTI_LIGHTNING");
   const minPartScoreRef = useRef<number>(0.2);
   const [ready, setReady] = useState(false);
-  const [gestureOnCooldown, setGestureOnCooldown] = useState(false);
+  const [playerCount, setPlayerCount] = useState<1 | 2 | 3>(2);
+  const [shotActive, setShotActive] = useState<Record<PlayerLabel, boolean>>(
+    () => createPlayerMap(() => false)
+  );
+  const shotTimeoutsRef = useRef<Record<PlayerLabel, number>>(
+    createPlayerMap(() => 0)
+  );
+  const activeLabels = useMemo<PlayerLabel[]>(
+    () => PLAYER_LAYOUTS[playerCount],
+    [playerCount]
+  );
+
+  const assignVideoRef = (index: number) => (node: HTMLVideoElement | null) => {
+    videoRefs.current[index] = node;
+    const stream = streamRef.current;
+    if (node && stream && node.srcObject !== stream) {
+      node.srcObject = stream;
+      node.onloadedmetadata = () => {
+        node.play().catch(() => {});
+        if (index === 0) setReady(true);
+      };
+    }
+  };
+
+  const assignCanvasRef =
+    (index: number) => (node: HTMLCanvasElement | null) => {
+      canvasRefs.current[index] = node;
+    };
 
   // Adjacency list for skeleton lines (MoveNet keypoint names)
   const SKELETON_PAIRS: [string, string][] = [
-    ['left_ankle', 'left_knee'],
-    ['left_knee', 'left_hip'],
-    ['right_ankle', 'right_knee'],
-    ['right_knee', 'right_hip'],
-    ['left_hip', 'right_hip'],
-    ['left_shoulder', 'left_hip'],
-    ['right_shoulder', 'right_hip'],
-    ['left_shoulder', 'right_shoulder'],
-    ['left_elbow', 'left_shoulder'],
-    ['right_elbow', 'right_shoulder'],
-    ['left_wrist', 'left_elbow'],
-    ['right_wrist', 'right_elbow'],
-    ['left_eye', 'right_eye'],
-    ['nose', 'left_eye'],
-    ['nose', 'right_eye']
+    ["left_ankle", "left_knee"],
+    ["left_knee", "left_hip"],
+    ["right_ankle", "right_knee"],
+    ["right_knee", "right_hip"],
+    ["left_hip", "right_hip"],
+    ["left_shoulder", "left_hip"],
+    ["right_shoulder", "right_hip"],
+    ["left_shoulder", "right_shoulder"],
+    ["left_elbow", "left_shoulder"],
+    ["right_elbow", "right_shoulder"],
+    ["left_wrist", "left_elbow"],
+    ["right_wrist", "right_elbow"],
+    ["left_eye", "right_eye"],
+    ["nose", "left_eye"],
+    ["nose", "right_eye"],
   ];
 
-  async function setDetector(model: 'SINGLE_LIGHTNING' | 'SINGLE_THUNDER' | 'MULTI_LIGHTNING') {
+  async function setDetector(
+    model: "SINGLE_LIGHTNING" | "SINGLE_THUNDER" | "MULTI_LIGHTNING"
+  ) {
     if (currentModelRef.current === model && detectorRef.current) return;
     currentModelRef.current = model;
     // Dispose previous if supported
-    try { (detectorRef.current as any)?.dispose?.(); } catch {}
+    try {
+      (detectorRef.current as any)?.dispose?.();
+    } catch {}
     const cfg: posedetection.MoveNetModelConfig = {
       modelType:
-        model === 'SINGLE_THUNDER'
+        model === "SINGLE_THUNDER"
           ? (posedetection.movenet as any).modelType.SINGLEPOSE_THUNDER
-          : model === 'MULTI_LIGHTNING'
+          : model === "MULTI_LIGHTNING"
           ? (posedetection.movenet as any).modelType.MULTIPOSE_LIGHTNING
-          : (posedetection.movenet as any).modelType.SINGLEPOSE_LIGHTNING
+          : (posedetection.movenet as any).modelType.SINGLEPOSE_LIGHTNING,
     };
-    detectorRef.current = await posedetection.createDetector(posedetection.SupportedModels.MoveNet, cfg);
+    detectorRef.current = await posedetection.createDetector(
+      posedetection.SupportedModels.MoveNet,
+      cfg
+    );
   }
 
   useEffect(() => {
     let cancelled = false;
     async function init() {
-      await tf.setBackend('webgl');
+      await tf.setBackend("webgl");
       await tf.ready();
-      await setDetector('SINGLE_LIGHTNING');
+      await setDetector("MULTI_LIGHTNING");
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-        audio: false
+        video: {
+          facingMode: "user",
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+        },
+        audio: false,
       });
       if (cancelled) return;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current?.play();
-          setReady(true);
+      streamRef.current = stream;
+      videoRefs.current.forEach((video, index) => {
+        if (!video) return;
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          video.play().catch(() => {});
+          if (index === 0) setReady(true);
         };
-      }
+      });
     }
     init();
     return () => {
       cancelled = true;
       try {
-        const tracks = (videoRef.current?.srcObject as MediaStream | null)?.getTracks?.() ?? [];
+        const tracks = streamRef.current?.getTracks?.() ?? [];
         tracks.forEach((t) => t.stop());
       } catch {}
+      streamRef.current = null;
       detectorRef.current = null;
     };
   }, []);
 
-  const draw = useCallback((poses: posedetection.Pose[], ctx: CanvasRenderingContext2D) => {
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    ctx.save();
-    ctx.lineWidth = 2;
-
-    // Skeleton lines
-    ctx.strokeStyle = 'rgba(59, 130, 246, 0.9)'; // blue
-    for (const pose of poses) {
-      const byName: Record<string, posedetection.Keypoint> = {};
-      for (const kp of pose.keypoints) {
-        if ((kp.score ?? 0) >= minPartScoreRef.current && kp.name) byName[kp.name] = kp;
-      }
-      for (const [a, b] of SKELETON_PAIRS) {
-        const ka = byName[a];
-        const kb = byName[b];
-        if (!ka || !kb) continue;
-        ctx.beginPath();
-        ctx.moveTo(ka.x, ka.y);
-        ctx.lineTo(kb.x, kb.y);
-        ctx.stroke();
-      }
-    }
-
-    // Keypoints
-    ctx.fillStyle = 'rgba(16, 185, 129, 0.9)'; // emerald
-    for (const pose of poses) {
-      for (const kp of pose.keypoints) {
-        if ((kp.score ?? 0) < minPartScoreRef.current) continue;
-        ctx.beginPath();
-        ctx.arc(kp.x, kp.y, 3, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-
-    // Velocity vectors for wrists and elbows
-    ctx.strokeStyle = 'rgba(244, 63, 94, 0.9)'; // rose
-    const prev = lastKeypointsRef.current?.[0];
-    const prevByName: Record<string, posedetection.Keypoint> = {};
-    (prev?.keypoints ?? []).forEach((k: posedetection.Keypoint) => {
-      if ((k?.score ?? 0) >= 0.3 && k.name) prevByName[k.name] = k;
-    });
-    const main = poses[0];
-    if (main) {
-      const names = ['left_wrist', 'right_wrist', 'left_elbow', 'right_elbow'];
-      const currentByName: Record<string, posedetection.Keypoint> = {};
-      (main.keypoints ?? []).forEach((k: posedetection.Keypoint) => {
-        if ((k?.score ?? 0) >= 0.3 && k.name) currentByName[k.name] = k;
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    return () => {
+      PLAYER_LABELS.forEach((label) => {
+        const timeoutId = shotTimeoutsRef.current[label];
+        if (timeoutId) {
+          window.clearTimeout(timeoutId);
+          shotTimeoutsRef.current[label] = 0;
+        }
       });
-      for (const n of names) {
-        const c = currentByName[n];
-        const p = prevByName[n];
-        if (!c || !p) continue;
-        ctx.beginPath();
-        ctx.moveTo(p.x, p.y);
-        ctx.lineTo(c.x, c.y);
-        ctx.stroke();
-      }
-    }
-
-    ctx.restore();
+    };
   }, []);
 
-  function isShootingGesture(pose?: posedetection.Pose, prevPose?: posedetection.Pose): boolean {
-    if (!pose) return false;
+  const showShotIndicator = useCallback(
+    (label: PlayerLabel) => {
+      if (typeof window === "undefined" || !activeLabels.includes(label)) {
+        return;
+      }
+      setShotActive((prev) => {
+        if (prev[label]) return prev;
+        return { ...prev, [label]: true };
+      });
+      const prevTimeout = shotTimeoutsRef.current[label];
+      if (prevTimeout) window.clearTimeout(prevTimeout);
+      const timeoutId = window.setTimeout(() => {
+        setShotActive((prev) => {
+          if (!prev[label]) return prev;
+          return { ...prev, [label]: false };
+        });
+        shotTimeoutsRef.current[label] = 0;
+      }, 250);
+      shotTimeoutsRef.current[label] = timeoutId;
+    },
+    [activeLabels]
+  );
+
+  type PlayerAssignment = {
+    label: PlayerLabel;
+    pose: posedetection.Pose | null;
+    color: string;
+  };
+
+  const getPoseCenterX = (pose?: posedetection.Pose | null) => {
+    if (!pose) return Number.POSITIVE_INFINITY;
+    const valid = pose.keypoints.filter((kp) => typeof kp.x === "number");
+    if (!valid.length) return Number.POSITIVE_INFINITY;
+    return valid.reduce((sum, kp) => sum + (kp.x ?? 0), 0) / valid.length;
+  };
+
+  const buildAssignments = useCallback(
+    (poses: posedetection.Pose[]): PlayerAssignment[] => {
+      const sorted = poses
+        .slice()
+        .sort((a, b) => getPoseCenterX(a) - getPoseCenterX(b));
+      const videoWidth = videoRefs.current[0]?.videoWidth || 640;
+      const fallbackTargets = activeLabels.reduce(
+        (acc, label, index) => {
+          const ratio =
+            activeLabels.length === 1
+              ? 0.5
+              : (index + 1) / (activeLabels.length + 1);
+          acc[label] = videoWidth * ratio;
+          return acc;
+        },
+        {} as Record<PlayerLabel, number>
+      );
+      const prevCenters = createPlayerMap((label) =>
+        getPoseCenterX(lastPlayerPosesRef.current[label])
+      );
+      const assignmentsByLabel = createPlayerMap<posedetection.Pose | null>(
+        () => null
+      );
+      const remaining = new Set<PlayerLabel>(activeLabels);
+
+      for (const pose of sorted) {
+        const center = getPoseCenterX(pose);
+        let bestLabel: PlayerLabel | null = null;
+        let bestDistance = Number.POSITIVE_INFINITY;
+        remaining.forEach((label) => {
+          const prevCenter = prevCenters[label];
+          const target = Number.isFinite(prevCenter)
+            ? prevCenter
+            : fallbackTargets[label] ?? videoWidth / 2;
+          const distance = Math.abs(center - target);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestLabel = label;
+          }
+        });
+        if (!bestLabel) break;
+        assignmentsByLabel[bestLabel] = pose;
+        remaining.delete(bestLabel);
+      }
+
+      return activeLabels.map((label) => ({
+        label,
+        pose: assignmentsByLabel[label],
+        color: PLAYER_COLORS[label],
+      }));
+    },
+    [activeLabels]
+  );
+
+  const draw = useCallback(
+    (
+      assignments: PlayerAssignment[],
+      contexts: CanvasRenderingContext2D[],
+      prevPlayerPoses: Record<PlayerLabel, posedetection.Pose | null>
+    ) => {
+      if (!contexts.length) return;
+
+      const keypointMap = (pose?: posedetection.Pose | null) => {
+        const map: Record<string, posedetection.Keypoint> = {};
+        (pose?.keypoints ?? []).forEach((kp: posedetection.Keypoint) => {
+          if ((kp?.score ?? 0) >= minPartScoreRef.current && kp.name) {
+            map[kp.name] = kp;
+          }
+        });
+        return map;
+      };
+      const velocityNames = [
+        "left_wrist",
+        "right_wrist",
+        "left_elbow",
+        "right_elbow",
+      ];
+
+      contexts.forEach((ctx) => {
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.save();
+        ctx.lineWidth = 2;
+
+        assignments.forEach(({ label, pose, color }) => {
+          if (pose) {
+            const byName = keypointMap(pose);
+            ctx.strokeStyle = color;
+            for (const [a, b] of SKELETON_PAIRS) {
+              const ka = byName[a];
+              const kb = byName[b];
+              if (!ka || !kb) continue;
+              ctx.beginPath();
+              ctx.moveTo(ka.x, ka.y);
+              ctx.lineTo(kb.x, kb.y);
+              ctx.stroke();
+            }
+
+            ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+            for (const kp of pose.keypoints) {
+              if ((kp.score ?? 0) < minPartScoreRef.current) continue;
+              ctx.beginPath();
+              ctx.arc(kp.x, kp.y, 3, 0, Math.PI * 2);
+              ctx.fill();
+            }
+
+            const prevPose = prevPlayerPoses[label];
+            const prevByName = keypointMap(prevPose);
+            ctx.strokeStyle = "rgba(244, 63, 94, 0.85)";
+            for (const n of velocityNames) {
+              const current = byName[n];
+              const prev = prevByName[n];
+              if (!current || !prev) continue;
+              ctx.beginPath();
+              ctx.moveTo(prev.x, prev.y);
+              ctx.lineTo(current.x, current.y);
+              ctx.stroke();
+            }
+          } else {
+            const pad = 14;
+            const isLeft = label === "Left Player";
+            const msg = `${label}: No pose`;
+            ctx.save();
+            ctx.font = "14px ui-sans-serif, system-ui, -apple-system";
+            ctx.fillStyle = "rgba(15, 23, 42, 0.6)";
+            const textWidth = ctx.measureText(msg).width + pad * 2;
+            const x = isLeft ? pad : ctx.canvas.width - textWidth - pad;
+            ctx.fillRect(x, pad, textWidth, 30);
+            ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+            ctx.textAlign = isLeft ? "left" : "right";
+            const textX = isLeft ? x + pad : x + textWidth - pad;
+            ctx.fillText(msg, textX, pad + 20);
+            ctx.restore();
+          }
+        });
+
+        ctx.restore();
+      });
+    },
+    []
+  );
+
+  function resetDebugInfo(label: PlayerLabel) {
+    debugInfoRef.current[label] = {
+      elbowsUp: false,
+      wristsUp: false,
+      velocity: 0,
+      decision: false,
+    };
+  }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setShotActive((prev) => {
+      const next = { ...prev };
+      PLAYER_LABELS.forEach((label) => {
+        if (!activeLabels.includes(label)) {
+          next[label] = false;
+        }
+      });
+      return next;
+    });
+    PLAYER_LABELS.forEach((label) => {
+      if (!activeLabels.includes(label)) {
+        const timeoutId = shotTimeoutsRef.current[label];
+        if (timeoutId) {
+          window.clearTimeout(timeoutId);
+          shotTimeoutsRef.current[label] = 0;
+        }
+        lastPlayerPosesRef.current[label] = null;
+        resetDebugInfo(label);
+      }
+    });
+  }, [activeLabels]);
+
+  function isShootingGesture(
+    pose: posedetection.Pose | null,
+    prevPose: posedetection.Pose | null | undefined,
+    playerLabel: PlayerLabel
+  ): boolean {
+    if (!pose) {
+      resetDebugInfo(playerLabel);
+      return false;
+    }
     const byName = (p?: posedetection.Pose) => {
       const map: Record<string, posedetection.Keypoint> = {};
       (p?.keypoints ?? []).forEach((k: posedetection.Keypoint) => {
-        if ((k?.name as string | undefined)) {
+        if (k?.name as string | undefined) {
           map[k.name as string] = k;
         }
       });
       return map;
     };
     const k = byName(pose);
-    const kp = (name: string) => (k[name] && (k[name].score ?? 0) > 0.3 ? k[name] : undefined);
-    const ls = kp('left_shoulder'), rs = kp('right_shoulder');
-    const le = kp('left_elbow'), re = kp('right_elbow');
-    const lw = kp('left_wrist'), rw = kp('right_wrist');
-    if (!ls || !rs || (!le && !re) || (!lw && !rw)) return false;
+    const kp = (name: string) =>
+      k[name] && (k[name].score ?? 0) > 0.3 ? k[name] : undefined;
+    const ls = kp("left_shoulder"),
+      rs = kp("right_shoulder");
+    const le = kp("left_elbow"),
+      re = kp("right_elbow");
+    const lw = kp("left_wrist"),
+      rw = kp("right_wrist");
+    if (!ls || !rs || (!le && !re) || (!lw && !rw)) {
+      resetDebugInfo(playerLabel);
+      return false;
+    }
     const elbowsUp = (le ? le.y < ls.y : false) && (re ? re.y < rs.y : false);
     const wristsUp = (lw ? lw.y < ls.y : false) && (rw ? rw.y < rs.y : false);
     if (!(elbowsUp && wristsUp)) {
-      debugInfoRef.current = { elbowsUp, wristsUp, velocity: 0, decision: false };
+      debugInfoRef.current[playerLabel] = {
+        elbowsUp,
+        wristsUp,
+        velocity: 0,
+        decision: false,
+      };
       return false;
     }
     if (!prevPose) {
-      debugInfoRef.current = { elbowsUp, wristsUp, velocity: 0, decision: false };
+      debugInfoRef.current[playerLabel] = {
+        elbowsUp,
+        wristsUp,
+        velocity: 0,
+        decision: false,
+      };
       return false;
     }
     const prev = byName(prevPose);
-    const prevRw = prev['right_wrist'];
-    const prevLw = prev['left_wrist'];
+    const prevRw = prev["right_wrist"];
+    const prevLw = prev["left_wrist"];
 
     // Convert to velocity per second using last inference delta
-    const dtMs = Math.max(16, performance.now() - (lastInferTsRef.current || performance.now()));
-    const vRight = (rw && prevRw) ? Math.hypot(rw.x - prevRw.x, rw.y - prevRw.y) * (1000 / dtMs) : 0;
-    const vLeft = (lw && prevLw) ? Math.hypot(lw.x - prevLw.x, lw.y - prevLw.y) * (1000 / dtMs) : 0;
+    const dtMs = Math.max(
+      16,
+      performance.now() - (lastInferTsRef.current || performance.now())
+    );
+    const vRight =
+      rw && prevRw
+        ? Math.hypot(rw.x - prevRw.x, rw.y - prevRw.y) * (1000 / dtMs)
+        : 0;
+    const vLeft =
+      lw && prevLw
+        ? Math.hypot(lw.x - prevLw.x, lw.y - prevLw.y) * (1000 / dtMs)
+        : 0;
     let velocity = Math.max(vRight, vLeft);
 
     // Directional component: forward along shoulder->wrist
-    const rightForward = (rs && rw) ? (() => {
-      const dir = { x: rw.x - rs.x, y: rw.y - rs.y };
-      const len = Math.hypot(dir.x, dir.y) || 1;
-      const prevVec = prevRw && rs ? { x: (rw.x - prevRw.x), y: (rw.y - prevRw.y) } : { x: 0, y: 0 };
-      return (dir.x / len) * prevVec.x + (dir.y / len) * prevVec.y;
-    })() : 0;
-    const leftForward = (ls && lw) ? (() => {
-      const dir = { x: lw.x - ls.x, y: lw.y - ls.y };
-      const len = Math.hypot(dir.x, dir.y) || 1;
-      const prevVec = prevLw && ls ? { x: (lw.x - prevLw.x), y: (lw.y - prevLw.y) } : { x: 0, y: 0 };
-      return (dir.x / len) * prevVec.x + (dir.y / len) * prevVec.y;
-    })() : 0;
-    const forwardComponent = Math.max(rightForward, leftForward) * (1000 / dtMs);
+    const rightForward =
+      rs && rw
+        ? (() => {
+            const dir = { x: rw.x - rs.x, y: rw.y - rs.y };
+            const len = Math.hypot(dir.x, dir.y) || 1;
+            const prevVec =
+              prevRw && rs
+                ? { x: rw.x - prevRw.x, y: rw.y - prevRw.y }
+                : { x: 0, y: 0 };
+            return (dir.x / len) * prevVec.x + (dir.y / len) * prevVec.y;
+          })()
+        : 0;
+    const leftForward =
+      ls && lw
+        ? (() => {
+            const dir = { x: lw.x - ls.x, y: lw.y - ls.y };
+            const len = Math.hypot(dir.x, dir.y) || 1;
+            const prevVec =
+              prevLw && ls
+                ? { x: lw.x - prevLw.x, y: lw.y - prevLw.y }
+                : { x: 0, y: 0 };
+            return (dir.x / len) * prevVec.x + (dir.y / len) * prevVec.y;
+          })()
+        : 0;
+    const forwardComponent =
+      Math.max(rightForward, leftForward) * (1000 / dtMs);
 
     // Scale-invariant threshold based on frame diagonal
-    const canvas = canvasRef.current;
+    const canvas = canvasRefs.current[0];
     const diag = canvas ? Math.hypot(canvas.width, canvas.height) : 1000;
     const pxPerSecThreshold = diag * 0.04; // 4% of diagonal per second
 
-    const decision = elbowsUp && wristsUp && (velocity > pxPerSecThreshold || forwardComponent > pxPerSecThreshold * 0.75);
-    debugInfoRef.current = { elbowsUp, wristsUp, velocity, decision };
+    const decision =
+      elbowsUp &&
+      wristsUp &&
+      (velocity > pxPerSecThreshold ||
+        forwardComponent > pxPerSecThreshold * 0.75);
+    debugInfoRef.current[playerLabel] = {
+      elbowsUp,
+      wristsUp,
+      velocity,
+      decision,
+    };
     return decision;
   }
 
   useEffect(() => {
     let raf = 0;
     async function loop() {
-      if (!videoRef.current || !detectorRef.current || !canvasRef.current) {
+      const video = videoRefs.current[0];
+      const detector = detectorRef.current;
+      const canvasNodes = canvasRefs.current.filter(
+        (node): node is HTMLCanvasElement => Boolean(node)
+      );
+      if (!video || !detector || !canvasNodes.length) {
         raf = requestAnimationFrame(loop);
         return;
       }
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d')!;
+      const contexts: CanvasRenderingContext2D[] = [];
 
       // HiDPI crispness
-      const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1;
+      const dpr =
+        typeof window !== "undefined" && window.devicePixelRatio
+          ? window.devicePixelRatio
+          : 1;
       const w = video.videoWidth || 640;
       const h = video.videoHeight || 480;
-      canvas.width = Math.floor(w * dpr);
-      canvas.height = Math.floor(h * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      for (const canvas of canvasNodes) {
+        const ctx = canvas.getContext("2d");
+        if (!ctx) continue;
+        canvas.width = Math.floor(w * dpr);
+        canvas.height = Math.floor(h * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        contexts.push(ctx);
+      }
+      if (!contexts.length) {
+        raf = requestAnimationFrame(loop);
+        return;
+      }
 
       // Throttle inference for performance
       const now = performance.now();
-      const posesFromPrev = lastKeypointsRef.current;
+      const posesFromPrev = lastDetectionsRef.current;
       let poses: posedetection.Pose[] = posesFromPrev;
       const INFER_INTERVAL_MS = 1000 / 15; // ~15 FPS
       if (now - (lastInferTsRef.current || 0) >= INFER_INTERVAL_MS) {
         try {
-          const opts: posedetection.PoseDetectorEstimateConfig = currentModelRef.current === 'MULTI_LIGHTNING'
-            ? { maxPoses: 3, flipHorizontal: true }
-            : { flipHorizontal: true };
-          poses = await detectorRef.current.estimatePoses(video, opts);
+          const opts: posedetection.PoseDetectorEstimateConfig =
+            currentModelRef.current === "MULTI_LIGHTNING"
+              ? { maxPoses: 3, flipHorizontal: true }
+              : { flipHorizontal: true };
+          poses = await detector.estimatePoses(video, opts);
           lastInferTsRef.current = now;
+          lastDetectionsRef.current = poses;
         } catch {}
       }
 
-      draw(poses, ctx);
+      const assignments = buildAssignments(poses);
+      const prevPlayerPoses = { ...lastPlayerPosesRef.current };
+      draw(assignments, contexts, prevPlayerPoses);
+      lastDetectionsRef.current = poses;
 
-      // Debug HUD
-      if (debug) {
-        const d = debugInfoRef.current;
-        const lines = [
-          `elbowsUp: ${d.elbowsUp}`,
-          `wristsUp: ${d.wristsUp}`,
-          `velocity: ${d.velocity.toFixed(1)}`,
-          `shooting: ${d.decision}`
-        ];
-        ctx.save();
-        ctx.font = '12px ui-sans-serif, system-ui, -apple-system';
-        ctx.textBaseline = 'top';
-        const pad = 6;
-        const boxW = 160;
-        const boxH = lines.length * 16 + pad * 2;
-        ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        ctx.fillRect(pad, pad, boxW, boxH);
-        ctx.fillStyle = 'white';
-        lines.forEach((t, i) => ctx.fillText(t, pad + 6, pad + 4 + i * 16));
-        ctx.restore();
-
-        // Event log (recent detections)
-        const recents = eventsRef.current.filter((e) => Date.now() - e.ts < 8000);
-        if (recents.length) {
-          ctx.save();
-          ctx.font = '12px ui-sans-serif, system-ui, -apple-system';
-          ctx.textBaseline = 'bottom';
-          const x = pad;
-          let y = canvas.height / (window.devicePixelRatio || 1) - pad;
-          for (let i = recents.length - 1; i >= 0; i--) {
-            const t = new Date(recents[i].ts).toLocaleTimeString();
-            const text = `${recents[i].label} @ ${t}`;
-            ctx.fillStyle = 'rgba(0,0,0,0.5)';
-            const tw = ctx.measureText(text).width + 12;
-            ctx.fillRect(x, y - 16, tw, 16);
-            ctx.fillStyle = 'white';
-            ctx.fillText(text, x + 6, y - 14);
-            y -= 18;
+      const assignmentPoseMap = assignments.reduce((acc, assignment) => {
+        acc[assignment.label] = assignment.pose;
+        return acc;
+      }, {} as Record<PlayerLabel, posedetection.Pose | null>);
+      const nowTs = Date.now();
+      activeLabels.forEach((label) => {
+        const pose = assignmentPoseMap[label];
+        const prevPose = prevPlayerPoses[label];
+        const decision = isShootingGesture(pose, prevPose, label);
+        if (!pose) {
+          lastPlayerPosesRef.current[label] = null;
+          resetDebugInfo(label);
+          return;
+        }
+        if (decision) {
+          showShotIndicator(label);
+        }
+        const cooldownUntil = gestureCooldownsRef.current[label] ?? 0;
+        if (nowTs >= cooldownUntil && decision) {
+          gestureCooldownsRef.current[label] = nowTs + 1500;
+          onShootGesture?.(label);
+          if (debug) {
+            eventsRef.current.push({
+              ts: nowTs,
+              label: `Shot detected · ${label}`,
+              player: label,
+            });
+            if (eventsRef.current.length > 20) eventsRef.current.shift();
           }
-          ctx.restore();
         }
-      }
-      const mainPose = poses[0];
-      const prevMainPose = lastKeypointsRef.current[0];
-      if (mainPose && !gestureOnCooldown && isShootingGesture(mainPose, prevMainPose)) {
-        setGestureOnCooldown(true);
-        onShootGesture?.();
-        if (debug) {
-          eventsRef.current.push({ ts: Date.now(), label: 'Shoot detected' });
-          if (eventsRef.current.length > 20) eventsRef.current.shift();
-        }
-        setTimeout(() => setGestureOnCooldown(false), 1500);
-      }
-      lastKeypointsRef.current = poses;
+        lastPlayerPosesRef.current[label] = pose;
+      });
 
       // Auto-tune detection if no poses for a while
       if (!poses || poses.length === 0) {
         noPoseFramesRef.current += 1;
       } else {
+        if (currentModelRef.current !== "MULTI_LIGHTNING") {
+          setDetector("MULTI_LIGHTNING").catch(() => {});
+        }
+        if (minPartScoreRef.current !== 0.2) {
+          minPartScoreRef.current = 0.2;
+        }
         noPoseFramesRef.current = 0;
       }
       if (noPoseFramesRef.current === 45) {
         // ease detection: lower part score threshold slightly
-        minPartScoreRef.current = Math.max(0.15, minPartScoreRef.current - 0.05);
+        minPartScoreRef.current = Math.max(
+          0.15,
+          minPartScoreRef.current - 0.05
+        );
       }
       if (noPoseFramesRef.current === 90) {
         // switch to more accurate model
-        setDetector('SINGLE_THUNDER').catch(() => {});
+        setDetector("SINGLE_THUNDER").catch(() => {});
       }
       if (noPoseFramesRef.current === 180) {
         // try multi-pose as last resort
-        setDetector('MULTI_LIGHTNING').catch(() => {});
+        setDetector("MULTI_LIGHTNING").catch(() => {});
       }
 
       raf = requestAnimationFrame(loop);
     }
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [draw, gestureOnCooldown, onShootGesture]);
+  }, [activeLabels, buildAssignments, draw, onShootGesture, showShotIndicator]);
+
+  const activeShotLabels = activeLabels.filter((label) => shotActive[label]);
+  const showShotBanner = activeShotLabels.length > 0;
 
   return (
-    <div className="relative">
-      <video ref={videoRef} className="w-full rounded-lg" muted playsInline />
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
-      <div className="absolute top-2 left-2 text-xs px-2 py-1 rounded glass">
-        {ready ? 'Webcam Ready · Raise both arms to predict' : 'Initializing...'}
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1 text-sm text-slate-200">
+        <label className="font-semibold tracking-wide">
+          Players: {playerCount}
+        </label>
+        <input
+          type="range"
+          min={1}
+          max={3}
+          value={playerCount}
+          onChange={(event) =>
+            setPlayerCount(Math.min(3, Math.max(1, Number(event.target.value))) as
+              | 1
+              | 2
+              | 3)
+          }
+          className="w-full accent-sky-400"
+        />
+        <div className="flex justify-between text-xs uppercase tracking-wide text-slate-400">
+          <span>1</span>
+          <span>2</span>
+          <span>3</span>
+        </div>
       </div>
+      <div className="relative aspect-video overflow-hidden rounded-2xl bg-black">
+        <video
+          ref={assignVideoRef(0)}
+          className="h-full w-full object-cover"
+          muted
+          playsInline
+          autoPlay
+        />
+        <canvas
+          ref={assignCanvasRef(0)}
+          className="pointer-events-none absolute inset-0 h-full w-full"
+        />
+        <div className="pointer-events-none absolute inset-0">
+          {activeLabels.map((label, index) => {
+            const position =
+              activeLabels.length === 1
+                ? "left-1/2 -translate-x-1/2"
+                : index === 0
+                ? "left-3"
+                : index === activeLabels.length - 1
+                ? "right-3"
+                : "left-1/2 -translate-x-1/2";
+            return (
+              <div
+                key={label}
+                className={`absolute top-3 rounded bg-black/55 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-white ${position}`}
+              >
+                {label}
+              </div>
+            );
+          })}
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 rounded-full bg-black/65 px-4 py-1 text-xs text-white">
+            {ready
+              ? "Webcam Ready · Raise both arms to shoot"
+              : "Initializing webcam..."}
+          </div>
+        </div>
+      </div>
+      {showShotBanner ? (
+        <div className="flex justify-center">
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/20 bg-slate-900/90 px-8 py-5 text-center shadow-[0_8px_28px_rgba(0,0,0,0.55)]">
+            <span className="text-white text-3xl font-black tracking-[0.35em]">
+              SHOT DETECTED
+            </span>
+            <div className="flex flex-wrap items-center justify-center gap-3 text-xs font-semibold uppercase tracking-[0.5em] text-white/80">
+              {activeShotLabels.map((label) => (
+                <span key={label} style={{ color: PLAYER_ACCENT_COLORS[label] }}>
+                  {label}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
-
-

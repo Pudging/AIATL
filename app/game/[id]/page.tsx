@@ -12,6 +12,7 @@ import ShotResultOverlay from "@/components/ShotResultOverlay";
 import PointsEarnedOverlay from "@/components/PointsEarnedOverlay";
 import MultiPlayerPointsOverlay from "@/components/MultiPlayerPointsOverlay";
 import { Howl } from "howler";
+import playerStats from "@/player_stats.json";
 
 const brandPalette = {
   deep: "#010c07",
@@ -22,6 +23,182 @@ const brandPalette = {
 };
 
 type SoundBankKey = "win" | "point" | "lose";
+
+type PlayerShootingStats = {
+  PLAYER_ID?: number | null;
+  PLAYER_NAME: string;
+  FG_PCT?: number | null;
+  FG3_PCT?: number | null;
+};
+
+type ShootingSplits = {
+  fgPct?: number;
+  fg3Pct?: number;
+};
+
+type ShootingOddsMeta = {
+  rewardMultiplier: number;
+  lossMultiplier: number;
+  percentage: number | null;
+  statLabel: "FG%" | "3P%" | null;
+};
+
+type ShotOddsInfo = {
+  playerName: string;
+  percentage: number | null;
+  statLabel: "FG%" | "3P%" | null;
+  rewardMultiplier: number;
+  lossMultiplier: number;
+  isThree: boolean;
+};
+
+const sanitizePlayerName = (name?: string | null) =>
+  name?.toLowerCase().replace(/[^a-z0-9]/g, "") ?? null;
+
+const playerShootingLookup: Map<string, ShootingSplits> = (() => {
+  const map = new Map<string, ShootingSplits>();
+  (playerStats as PlayerShootingStats[]).forEach((player) => {
+    const key = sanitizePlayerName(player.PLAYER_NAME);
+    const entry: ShootingSplits = {
+      fgPct:
+        typeof player.FG_PCT === "number"
+          ? player.FG_PCT ?? undefined
+          : undefined,
+      fg3Pct:
+        typeof player.FG3_PCT === "number"
+          ? player.FG3_PCT ?? undefined
+          : undefined,
+    };
+    if (key) {
+      map.set(key, entry);
+    }
+  });
+  return map;
+})();
+
+const playerShootingLookupById: Map<string, ShootingSplits> = (() => {
+  const map = new Map<string, ShootingSplits>();
+  (playerStats as PlayerShootingStats[]).forEach((player) => {
+    if (typeof player.PLAYER_ID !== "number") return;
+    const entry: ShootingSplits = {
+      fgPct:
+        typeof player.FG_PCT === "number"
+          ? player.FG_PCT ?? undefined
+          : undefined,
+      fg3Pct:
+        typeof player.FG3_PCT === "number"
+          ? player.FG3_PCT ?? undefined
+          : undefined,
+    };
+    map.set(String(player.PLAYER_ID), entry);
+  });
+  return map;
+})();
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+const lerp = (start: number, end: number, t: number) =>
+  start + (end - start) * t;
+
+function getPlayerShootingSplits(
+  playerId?: string | number | null,
+  playerName?: string | null
+) {
+  if (playerId != null) {
+    const entry =
+      playerShootingLookupById.get(String(playerId)) ??
+      playerShootingLookup.get(sanitizePlayerName(playerName) ?? "");
+    if (entry) return entry;
+  }
+  if (!playerName) return null;
+  const key = sanitizePlayerName(playerName);
+  if (!key) return null;
+  return playerShootingLookup.get(key) ?? null;
+}
+
+function getPlayerShootingPercentage(
+  playerName: string | null | undefined,
+  isThreePointShot: boolean,
+  playerId?: string | number | null
+): { value: number | null; statLabel: "FG%" | "3P%" | null } {
+  const splits = getPlayerShootingSplits(playerId, playerName);
+  if (!splits) return { value: null, statLabel: null };
+
+  if (isThreePointShot && typeof splits.fg3Pct === "number") {
+    return { value: splits.fg3Pct, statLabel: "3P%" };
+  }
+  if (!isThreePointShot && typeof splits.fgPct === "number") {
+    return { value: splits.fgPct, statLabel: "FG%" };
+  }
+  if (typeof splits.fgPct === "number") {
+    return { value: splits.fgPct, statLabel: "FG%" };
+  }
+  if (typeof splits.fg3Pct === "number") {
+    return { value: splits.fg3Pct, statLabel: "3P%" };
+  }
+  return { value: null, statLabel: null };
+}
+
+function getDirectionalRewardLoss(
+  pct: number,
+  isThreePointShot: boolean
+): { reward: number; loss: number } {
+  const minPct = isThreePointShot ? 0.22 : 0.4;
+  const maxPct = isThreePointShot ? 0.45 : 0.65;
+  const clampedPct = clamp(pct, minPct, maxPct);
+  const normalized = (clampedPct - minPct) / Math.max(0.0001, maxPct - minPct);
+  const bias = normalized - 0.35; // negative = inefficient shooter
+
+  let reward: number;
+  let loss: number;
+
+  if (bias >= 0) {
+    // Reliable shooter: muted upside, heavy downside
+    reward = lerp(isThreePointShot ? 1.05 : 1.0, 0.8, Math.min(bias * 1.2, 1));
+    loss = lerp(isThreePointShot ? 1.7 : 1.5, 2.4, Math.min(bias * 1.1, 1));
+  } else {
+    const easyBias = Math.min(Math.abs(bias) * 1.3, 1);
+    // Streaky/low shooter: juice wins, soften losses
+    reward = lerp(isThreePointShot ? 1.4 : 1.3, 2.4, easyBias);
+    loss = lerp(isThreePointShot ? 1.0 : 0.95, 0.6, easyBias);
+  }
+
+  return {
+    reward: Number(clamp(reward, 0.8, 2.4).toFixed(2)),
+    loss: Number(clamp(loss, 0.6, 2.4).toFixed(2)),
+  };
+}
+
+function getPlayerShootingDifficulty(
+  playerName: string | null | undefined,
+  isThreePointShot: boolean,
+  playerId?: string | number | null
+): ShootingOddsMeta {
+  const { value, statLabel } = getPlayerShootingPercentage(
+    playerName,
+    isThreePointShot,
+    playerId
+  );
+
+  if (typeof value !== "number" || Number.isNaN(value) || value <= 0) {
+    return {
+      rewardMultiplier: 1,
+      lossMultiplier: 1,
+      percentage: null,
+      statLabel: null,
+    };
+  }
+
+  const { reward, loss } = getDirectionalRewardLoss(value, isThreePointShot);
+
+  return {
+    rewardMultiplier: reward,
+    lossMultiplier: loss,
+    percentage: value,
+    statLabel,
+  };
+}
 
 const WebcamGestureDetector = dynamic(
   () => import("@/components/WebcamGestureDetector"),
@@ -95,22 +272,22 @@ export default function GameViewPage() {
               }
             }
           }
-          
+
           // Also play cascading coins falling - ascending notes
           const notes = [523, 587, 659, 698, 784, 880, 988, 1047]; // C5 to C6 scale
           const noteDelay = 0.05; // Fast cascade
-          
+
           notes.forEach((freq, i) => {
             const osc = ctx.createOscillator();
             osc.type = "sine";
             osc.frequency.setValueAtTime(freq, now + i * noteDelay);
-            
+
             const gain = ctx.createGain();
             const startTime = now + i * noteDelay;
             gain.gain.setValueAtTime(0, startTime);
             gain.gain.linearRampToValueAtTime(0.15, startTime + 0.01);
             gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.15);
-            
+
             osc.connect(gain).connect(ctx.destination);
             osc.start(startTime);
             osc.stop(startTime + 0.15);
@@ -119,18 +296,18 @@ export default function GameViewPage() {
               gain.disconnect();
             };
           });
-          
+
           // Final "ding" at the end
           const finalOsc = ctx.createOscillator();
           finalOsc.type = "sine";
           const finalTime = now + notes.length * noteDelay;
           finalOsc.frequency.setValueAtTime(1319, finalTime); // E6
-          
+
           const finalGain = ctx.createGain();
           finalGain.gain.setValueAtTime(0, finalTime);
           finalGain.gain.linearRampToValueAtTime(0.25, finalTime + 0.02);
           finalGain.gain.exponentialRampToValueAtTime(0.001, finalTime + 0.5);
-          
+
           finalOsc.connect(finalGain).connect(ctx.destination);
           finalOsc.start(finalTime);
           finalOsc.stop(finalTime + 0.5);
@@ -144,18 +321,18 @@ export default function GameViewPage() {
           // Cascading coins falling down - descending notes (sad trombone effect)
           const notes = [440, 392, 349, 311, 277, 247, 220, 196]; // A4 down to G3
           const noteDelay = 0.06; // Slightly slower for sadness
-          
+
           notes.forEach((freq, i) => {
             const osc = ctx.createOscillator();
             osc.type = "sawtooth";
             osc.frequency.setValueAtTime(freq, now + i * noteDelay);
-            
+
             const gain = ctx.createGain();
             const startTime = now + i * noteDelay;
             gain.gain.setValueAtTime(0, startTime);
             gain.gain.linearRampToValueAtTime(0.12, startTime + 0.01);
             gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.2);
-            
+
             osc.connect(gain).connect(ctx.destination);
             osc.start(startTime);
             osc.stop(startTime + 0.2);
@@ -164,18 +341,18 @@ export default function GameViewPage() {
               gain.disconnect();
             };
           });
-          
+
           // Final low "thud"
           const finalOsc = ctx.createOscillator();
           finalOsc.type = "square";
           const finalTime = now + notes.length * noteDelay;
           finalOsc.frequency.setValueAtTime(110, finalTime); // A2
-          
+
           const finalGain = ctx.createGain();
           finalGain.gain.setValueAtTime(0, finalTime);
           finalGain.gain.linearRampToValueAtTime(0.2, finalTime + 0.02);
           finalGain.gain.linearRampToValueAtTime(0.001, finalTime + 0.4);
-          
+
           finalOsc.connect(finalGain).connect(ctx.destination);
           finalOsc.start(finalTime);
           finalOsc.stop(finalTime + 0.4);
@@ -310,6 +487,7 @@ export default function GameViewPage() {
         basePoints: number;
         shotMultiplier: number;
         streakMultiplier: number;
+        oddsMultiplier: number;
       }
     >
   >({
@@ -319,6 +497,7 @@ export default function GameViewPage() {
       basePoints: 0,
       shotMultiplier: 1,
       streakMultiplier: 1,
+      oddsMultiplier: 1,
     },
     "Right Player": {
       show: false,
@@ -326,6 +505,7 @@ export default function GameViewPage() {
       basePoints: 0,
       shotMultiplier: 1,
       streakMultiplier: 1,
+      oddsMultiplier: 1,
     },
     "Center Player": {
       show: false,
@@ -333,6 +513,7 @@ export default function GameViewPage() {
       basePoints: 0,
       shotMultiplier: 1,
       streakMultiplier: 1,
+      oddsMultiplier: 1,
     },
   });
   const [playerStreaks, setPlayerStreaks] = useState<
@@ -377,7 +558,17 @@ export default function GameViewPage() {
   const [currentTime, setCurrentTime] = useState("");
   const [isMounted, setIsMounted] = useState(false);
   const [testGameTimestamp, setTestGameTimestamp] = useState(0);
+  const [activeShotOdds, setActiveShotOdds] = useState<ShotOddsInfo | null>(
+    null
+  );
   const isTestGame = id?.toUpperCase() === "TEST001";
+  const isTest002 = id?.toUpperCase() === "TEST002";
+
+  useEffect(() => {
+    if (!isTestGame) {
+      setTestGameTimestamp(0);
+    }
+  }, [isTestGame]);
 
   // Helper: Convert game clock (MM:SS or M:SS or PT format) to seconds
   const clockToSeconds = (clock: string): number => {
@@ -607,7 +798,6 @@ export default function GameViewPage() {
 
   useEffect(() => {
     let active = true;
-    const isTest002 = id?.toUpperCase() === "TEST002";
 
     async function loadAll() {
       // For TEST002, load all historical states at once
@@ -934,10 +1124,29 @@ export default function GameViewPage() {
       `Shot detected! Clock: ${gameState.clock}, Showing popup immediately (synced playback)`
     );
 
+    const is3pt =
+      (lastShot.points ?? 0) === 3 ||
+      !!lastShot.shotType?.toLowerCase().includes("3");
+    const shootingOddsMeta = getPlayerShootingDifficulty(
+      lastShot.playerName,
+      is3pt ?? false,
+      lastShot.playerId
+    );
+    const rewardMultiplier = shootingOddsMeta.rewardMultiplier;
+    const lossMultiplier = shootingOddsMeta.lossMultiplier;
+
     setTimeout(() => {
       console.log("Showing shot incoming popup NOW");
       // 3 second countdown for user to predict
       setShotCountdown(3);
+      setActiveShotOdds({
+        playerName: lastShot.playerName ?? "Unknown",
+        percentage: shootingOddsMeta.percentage,
+        statLabel: shootingOddsMeta.statLabel,
+        rewardMultiplier,
+        lossMultiplier,
+        isThree: !!is3pt,
+      });
       setShowShotIncoming(true);
       setPredictionWindowActive(true);
       resetPredictions();
@@ -946,10 +1155,10 @@ export default function GameViewPage() {
       setTimeout(() => {
         console.log("Showing shot result NOW");
         setShowShotIncoming(false);
+        setActiveShotOdds(null);
         setPredictionWindowActive(false);
 
         // Calculate distance
-        const is3pt = lastShot.shotType?.toLowerCase().includes("3");
         const distance = is3pt
           ? `${22 + Math.floor(Math.random() * 8)} ft`
           : `${8 + Math.floor(Math.random() * 14)} ft`;
@@ -1000,6 +1209,7 @@ export default function GameViewPage() {
               basePoints: number;
               shotMultiplier: number;
               streakMultiplier: number;
+              oddsMultiplier: number;
               finalPoints: number;
             }
           > = {} as any;
@@ -1010,9 +1220,9 @@ export default function GameViewPage() {
               playerPredictions[playerPredictions.length - 1];
             const predictedShotType = lastPrediction?.shotType;
 
-            // Apply 2x multiplier if shot type matches
+            // Apply 2x multiplier if shot type matches and shot was made
             const shotMultiplier =
-              predictedShotType === actualGestureType ? 2 : 1;
+              isMade && predictedShotType === actualGestureType ? 2 : 1;
 
             // Update streak: increment if made, reset if missed
             const currentStreak = playerStreaks[label] ?? 0;
@@ -1023,8 +1233,10 @@ export default function GameViewPage() {
             const streakMultiplier = 1 + Math.max(0, newStreak - 1) * 0.2;
 
             // Calculate final delta: base * shotMultiplier * streakMultiplier
+            const oddsFactor =
+              baseDelta >= 0 ? rewardMultiplier : lossMultiplier;
             const delta = Math.round(
-              baseDelta * shotMultiplier * streakMultiplier
+              baseDelta * shotMultiplier * streakMultiplier * oddsFactor
             );
 
             playerDeltas[label] = delta;
@@ -1032,13 +1244,18 @@ export default function GameViewPage() {
               basePoints: baseDelta,
               shotMultiplier,
               streakMultiplier,
+              oddsMultiplier: oddsFactor,
               finalPoints: delta,
             };
 
             console.log(
               `[POINTS] ${label}: predicted=${predictedShotType}, actual=${actualGestureType}, shot=${shotMultiplier}x, streak=${newStreak} (${streakMultiplier.toFixed(
                 1
-              )}x), delta=${delta}`
+              )}x), odds=${
+                baseDelta >= 0
+                  ? rewardMultiplier.toFixed(2)
+                  : lossMultiplier.toFixed(2)
+              }x applied=${oddsFactor.toFixed(2)}, delta=${delta}`
             );
           });
 
@@ -1089,6 +1306,7 @@ export default function GameViewPage() {
                 basePoints: info.basePoints,
                 shotMultiplier: info.shotMultiplier,
                 streakMultiplier: info.streakMultiplier,
+                oddsMultiplier: info.oddsMultiplier,
               };
             });
             return next;
@@ -1103,6 +1321,7 @@ export default function GameViewPage() {
                 basePoints: 0,
                 shotMultiplier: 1,
                 streakMultiplier: 1,
+                oddsMultiplier: 1,
               },
               "Right Player": {
                 show: false,
@@ -1110,6 +1329,7 @@ export default function GameViewPage() {
                 basePoints: 0,
                 shotMultiplier: 1,
                 streakMultiplier: 1,
+                oddsMultiplier: 1,
               },
               "Center Player": {
                 show: false,
@@ -1117,6 +1337,7 @@ export default function GameViewPage() {
                 basePoints: 0,
                 shotMultiplier: 1,
                 streakMultiplier: 1,
+                oddsMultiplier: 1,
               },
             });
           }, 2500);
@@ -1182,13 +1403,16 @@ export default function GameViewPage() {
           PlayerLabel,
           number
         >;
+        const laneOddsFactor =
+          baseDelta >= 0 ? rewardMultiplier : lossMultiplier;
         labelsWithPrediction.forEach((label) => {
           const playerPredictions = predictionsRef.current[label] ?? [];
           const lastPrediction =
             playerPredictions[playerPredictions.length - 1];
           const predictedShotType = lastPrediction?.shotType;
-          const multiplier = predictedShotType === actualGestureType ? 2 : 1;
-          laneDeltas[label] = baseDelta * multiplier;
+          const shotMatchMultiplier =
+            predictedShotType === actualGestureType ? 2 : 1;
+          laneDeltas[label] = baseDelta * shotMatchMultiplier * laneOddsFactor;
         });
 
         activeLabels.forEach((label) => {
@@ -1630,7 +1854,7 @@ export default function GameViewPage() {
                     onChange={(e) =>
                       setTestGameTimestamp(Number(e.target.value))
                     }
-                    className="mlb-range w-full appearance-none"
+                    className="mlb-range w-full appearance-none cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
                   />
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-between px-[2px] pt-3.5">
                     {Array.from({ length: 7 }).map((_, index) => (
@@ -2415,62 +2639,11 @@ export default function GameViewPage() {
           </div>
         </div>
       </div>
-      {(state?.lastAction ||
-        liveState?.lastAction ||
-        (state?.recentActions?.length ?? 0) > 0 ||
-        (liveState?.recentActions?.length ?? 0) > 0) && (
-        <div className="fixed bottom-6 left-6 z-40 hidden max-w-3xl flex-col gap-3 md:flex">
-          {[
-            ...(state?.recentActions ?? liveState?.recentActions ?? []).slice(
-              0,
-              2
-            ),
-            ...(state?.lastAction || liveState?.lastAction
-              ? [state?.lastAction || liveState?.lastAction]
-              : []),
-          ]
-            .slice(0, 3)
-            .map((act, idx) => (
-              <div
-                key={idx}
-                className="popup-flash relative overflow-hidden rounded-lg border-2 border-emerald-400/40 bg-gradient-to-br from-[#0f192b] to-[#1a1d29] px-8 py-4 text-base text-slate-100 shadow-[0_0_30px_rgba(16,185,129,0.3),0_20px_60px_rgba(0,0,0,0.7)]"
-                style={{
-                  animation:
-                    "popupFlash 0.6s ease-out, glowPulse 2s ease-in-out infinite, popupFadeOut 5s ease-in forwards",
-                }}
-              >
-                <div className="text-center">
-                  <div className="text-sm font-semibold uppercase tracking-wider text-slate-300">
-                    {idx === 1 && (state?.lastAction || liveState?.lastAction)
-                      ? "INSTANT RESULT"
-                      : "LIVE UPDATE"}
-                  </div>
-                </div>
-                <div className="mt-3 text-base font-semibold text-white">
-                  {act?.playerName ?? act?.name ?? "Unknown"} (
-                  {act?.teamTricode ?? "NYY"})
-                </div>
-                <div className="mt-2 text-xs text-slate-300">
-                  {act.actionType
-                    ? `${act.actionType} — ${act.shotResult ?? "Odds move"}`
-                    : act.description ?? act.shotResult ?? "Live line moved"}
-                </div>
-                <div className="mt-3 flex items-center justify-between text-xs text-emerald-300">
-                  <span>Live odds shift</span>
-                  <span className="border border-emerald-400/40 px-2 py-[2px] font-semibold text-emerald-100">
-                    {idx % 2 === 0 ? "+105 → -120" : "+160 → +140"}
-                  </span>
-                </div>
-                <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-slate-400">
-                  <span>Parlay ready</span>
-                  <span className="text-emerald-200">Boost +15%</span>
-                </div>
-              </div>
-            ))}
-        </div>
-      )}
-
-      <ShotIncomingOverlay show={showShotIncoming} countdown={shotCountdown} />
+      <ShotIncomingOverlay
+        show={showShotIncoming}
+        countdown={shotCountdown}
+        shotOdds={activeShotOdds}
+      />
       <ShotResultOverlay show={showShotResult} shotData={currentShotData} />
       <MultiPlayerPointsOverlay
         players={[
@@ -2482,6 +2655,7 @@ export default function GameViewPage() {
             shotMultiplier: playerPointsDisplay["Left Player"].shotMultiplier,
             streakMultiplier:
               playerPointsDisplay["Left Player"].streakMultiplier,
+            oddsMultiplier: playerPointsDisplay["Left Player"].oddsMultiplier,
           },
           {
             label: "Right Player",
@@ -2491,6 +2665,7 @@ export default function GameViewPage() {
             shotMultiplier: playerPointsDisplay["Right Player"].shotMultiplier,
             streakMultiplier:
               playerPointsDisplay["Right Player"].streakMultiplier,
+            oddsMultiplier: playerPointsDisplay["Right Player"].oddsMultiplier,
           },
           {
             label: "Center Player",
@@ -2500,6 +2675,7 @@ export default function GameViewPage() {
             shotMultiplier: playerPointsDisplay["Center Player"].shotMultiplier,
             streakMultiplier:
               playerPointsDisplay["Center Player"].streakMultiplier,
+            oddsMultiplier: playerPointsDisplay["Center Player"].oddsMultiplier,
           },
         ]}
       />

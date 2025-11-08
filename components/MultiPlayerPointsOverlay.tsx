@@ -11,6 +11,7 @@ type PlayerPoints = {
   basePoints?: number;
   shotMultiplier?: number;
   streakMultiplier?: number;
+  oddsMultiplier?: number;
 };
 
 type Props = {
@@ -123,6 +124,20 @@ export default function MultiPlayerPointsOverlay({ players }: Props) {
                             className="text-lg font-bold text-yellow-200"
                           >
                             × {player.shotMultiplier} 🎯 SHOT TYPE!
+                          </motion.div>
+                        )}
+                        {player.oddsMultiplier && player.oddsMultiplier !== 1 && (
+                          <motion.div
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            transition={{ delay: 0.35, type: "spring", stiffness: 260 }}
+                            className={`text-base font-semibold ${
+                              player.oddsMultiplier > 1
+                                ? "text-emerald-50"
+                                : "text-orange-100"
+                            }`}
+                          >
+                            × {player.oddsMultiplier.toFixed(2)} Shooting odds
                           </motion.div>
                         )}
                         <motion.div
@@ -407,4 +422,3 @@ export default function MultiPlayerPointsOverlay({ players }: Props) {
     </>
   );
 }
-

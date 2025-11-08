@@ -3,13 +3,28 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState } from 'react';
 
+type ShotOddsDetails = {
+  playerName: string;
+  percentage: number | null;
+  statLabel: "FG%" | "3P%" | null;
+  rewardMultiplier: number;
+  lossMultiplier: number;
+  isThree: boolean;
+};
+
 type Props = {
   show: boolean;
   countdown: number;
+  shotOdds?: ShotOddsDetails | null;
   onComplete?: () => void;
 };
 
-export default function ShotIncomingOverlay({ show, countdown, onComplete }: Props) {
+export default function ShotIncomingOverlay({
+  show,
+  countdown,
+  shotOdds,
+  onComplete,
+}: Props) {
   const [pulseKey, setPulseKey] = useState(0);
   const [currentCount, setCurrentCount] = useState(countdown);
 
@@ -175,6 +190,57 @@ export default function ShotIncomingOverlay({ show, countdown, onComplete }: Pro
               </motion.div>
             </motion.div>
 
+            {shotOdds && (
+              <motion.div
+                key={`odds-${pulseKey}`}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.7, duration: 0.4 }}
+                className="mt-10 max-w-xl mx-auto"
+              >
+                <div className="text-sm uppercase tracking-[0.4em] text-amber-200/80 mb-3">
+                  Risk profile: {shotOdds.playerName}
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="rounded-2xl border border-emerald-400/50 bg-emerald-500/10 p-4 shadow-[0_0_25px_rgba(16,185,129,0.25)]">
+                    <div className="text-xs font-semibold uppercase tracking-[0.4em] text-emerald-200/80">
+                      Make shot
+                    </div>
+                    <div className="mt-2 text-4xl font-black text-white">
+                      × {shotOdds.rewardMultiplier.toFixed(2)}
+                    </div>
+                    <div className="text-xs text-emerald-100/80 mt-1">
+                      Bigger upside for tougher shooters
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-rose-400/50 bg-rose-500/10 p-4 shadow-[0_0_25px_rgba(244,63,94,0.25)]">
+                    <div className="text-xs font-semibold uppercase tracking-[0.4em] text-rose-200/80">
+                      Miss shot
+                    </div>
+                    <div className="mt-2 text-4xl font-black text-white">
+                      × {shotOdds.lossMultiplier.toFixed(2)}
+                    </div>
+                    <div className="text-xs text-rose-100/80 mt-1">
+                      Cold hands cost more for sharpshooters
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-col items-center gap-1 text-sm text-white/80">
+                  <span className="font-semibold uppercase tracking-[0.3em] text-amber-200/80">
+                    {shotOdds.statLabel ?? (shotOdds.isThree ? "3P%" : "FG%")}
+                  </span>
+                  <span className="text-2xl font-bold text-white">
+                    {shotOdds.percentage != null
+                      ? `${(shotOdds.percentage * 100).toFixed(1)}%`
+                      : "No season data"}
+                  </span>
+                  <span className="text-xs text-white/70">
+                    {shotOdds.isThree ? "3PT look" : "Inside the arc"}
+                  </span>
+                </div>
+              </motion.div>
+            )}
+
             {/* Flashing indicators */}
             <div className="mt-8 flex justify-center gap-4">
               {[0, 1, 2].map((i) => (
@@ -220,4 +286,3 @@ export default function ShotIncomingOverlay({ show, countdown, onComplete }: Pro
     </AnimatePresence>
   );
 }
-

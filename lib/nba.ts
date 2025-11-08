@@ -205,7 +205,10 @@ export function parseGameState(playByPlayJson: any, boxScoreJson?: any): ParsedG
       const shotTypeStr = (a.subType || a.shotType || a.actionType || '').toString();
       const is3 = shotTypeStr.toLowerCase().includes('3') || a.points === 3 || a.pointsTotal === 3;
       const shotResultStr = (a.shotResult || a.result || '').toString();
+      const personId =
+        a.personId?.toString() || a.playerId?.toString() || a.player1Id?.toString();
       lastShot = {
+        playerId: personId,
         playerName: a.playerNameI || a.playerName || 'Unknown',
         teamTricode: a.teamTricode || a.teamTricode1,
         shotResult: shotResultStr || 'Unknown',
@@ -239,5 +242,4 @@ export function parseGameState(playByPlayJson: any, boxScoreJson?: any): ParsedG
 function teamLogoUrl(teamId: number | string): string {
   return `https://cdn.nba.com/logos/nba/${teamId}/global/L/logo.svg`;
 }
-
 

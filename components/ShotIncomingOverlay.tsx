@@ -1,7 +1,7 @@
 'use client';
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 
 type ShotOddsDetails = {
   playerName: string;
@@ -27,11 +27,78 @@ export default function ShotIncomingOverlay({
 }: Props) {
   const [pulseKey, setPulseKey] = useState(0);
   const [currentCount, setCurrentCount] = useState(countdown);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  const ensureAudioCtx = useCallback((): AudioContext | null => {
+    if (typeof window === "undefined") return null;
+    const AudioContextCtor =
+      window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextCtor) return null;
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new AudioContextCtor();
+    }
+    if (audioCtxRef.current.state === "suspended") {
+      audioCtxRef.current.resume().catch(() => {});
+    }
+    return audioCtxRef.current;
+  }, []);
+
+  const playPopSound = useCallback(() => {
+    const ctx = ensureAudioCtx();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    // Dramatic "WHOOSH" pop sound
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(800, now);
+    osc.frequency.exponentialRampToValueAtTime(200, now + 0.15);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.3, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.15);
+    osc.onended = () => {
+      osc.disconnect();
+      gain.disconnect();
+    };
+  }, [ensureAudioCtx]);
+
+  const playTickSound = useCallback((count: number) => {
+    const ctx = ensureAudioCtx();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    // Different pitch for different counts - gets higher as countdown gets lower
+    const baseFreq = count === 1 ? 1200 : count === 2 ? 900 : 700;
+
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(baseFreq, now);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.25, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.1);
+    osc.onended = () => {
+      osc.disconnect();
+      gain.disconnect();
+    };
+  }, [ensureAudioCtx]);
 
   useEffect(() => {
     if (show) {
       setPulseKey((k) => k + 1);
       setCurrentCount(countdown);
+      playPopSound(); // Play pop sound when overlay appears
       
       const interval = setInterval(() => {
         setCurrentCount((c) => {
@@ -40,13 +107,24 @@ export default function ShotIncomingOverlay({
             onComplete?.();
             return 0;
           }
-          return c - 1;
+          const newCount = c - 1;
+          playTickSound(newCount); // Play tick sound on each countdown
+          return newCount;
         });
       }, 1000);
       
       return () => clearInterval(interval);
     }
-  }, [show, countdown, onComplete]);
+  }, [show, countdown, onComplete, playPopSound, playTickSound]);
+
+  // Cleanup audio context on unmount
+  useEffect(() => {
+    return () => {
+      if (audioCtxRef.current) {
+        audioCtxRef.current.close().catch(() => {});
+      }
+    };
+  }, []);
 
   return (
     <AnimatePresence>

@@ -21,12 +21,13 @@ export async function GET(
 
   const sessions = await gameSessions
     .find({ gameId, active: true })
-    .project({ joinCode: 1 })
+    .project({ joinCode: 1, hostUserId: 1, hostKey: 1 })
     .toArray();
 
   const result = [] as Array<{
     id: string;
     joinCode: string;
+    hostName: string | null;
     players: Array<{
       slot: number;
       points: number;
@@ -36,6 +37,18 @@ export async function GET(
 
   for (const s of sessions) {
     const sid = (s as any)._id.toString();
+
+    // Get host name if authenticated
+    let hostName: string | null = null;
+    if ((s as any).hostUserId) {
+      try {
+        const hostUser = await usersCol.findOne({
+          _id: new ObjectId((s as any).hostUserId),
+        });
+        hostName = hostUser?.name ?? null;
+      } catch {}
+    }
+
     const assignments = await playerAssignments
       .find({ gameSessionId: sid })
       .toArray();
@@ -61,6 +74,7 @@ export async function GET(
     result.push({
       id: sid,
       joinCode: (s as any).joinCode,
+      hostName,
       players,
     });
   }

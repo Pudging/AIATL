@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
-import Image from "next/image";
 import type { ParsedGameState } from "@/components/types";
 import type { ShotType } from "@/components/WebcamGestureDetector";
 import ScoreAnimation from "@/components/ScoreAnimation";
@@ -554,6 +553,7 @@ export default function GameViewPage() {
     Array<{
       id: string;
       joinCode: string;
+      hostName: string | null;
       players: Array<{
         slot: number;
         points: number;
@@ -2437,28 +2437,87 @@ export default function GameViewPage() {
                         {otherHosts.map((host) => (
                           <div
                             key={host.id}
-                            className="rounded-xl border border-white/10 bg-black/35 p-3"
+                            className="rounded-xl border border-white/10 bg-black/35 p-3 relative"
                           >
                             <div className="mb-2 flex items-center justify-between">
-                              <div className="text-[10px] uppercase tracking-[0.35em] text-white/50">
-                                Join: {host.joinCode}
-                              </div>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              {host.players.map((p) => (
-                                <div
-                                  key={`${host.id}-${p.slot}`}
-                                  className="flex-1 min-w-[130px] rounded border border-white/10 bg-[#0d1b31] px-3 py-2"
-                                >
-                                  <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-white/70">
-                                    {p.user.name ?? `Player ${p.slot + 1}`}
-                                  </div>
-                                  <div className="mt-1 text-2xl font-black text-white">
-                                    {p.points.toLocaleString()}
-                                  </div>
+                              <div className="flex flex-col gap-1">
+                                <div className="text-sm font-semibold text-white">
+                                  {host.hostName ?? "Anonymous Host"}
                                 </div>
-                              ))}
+                                <div className="text-[10px] uppercase tracking-[0.35em] text-white/50">
+                                  Join: {host.joinCode}
+                                </div>
+                              </div>
+                              <button
+                                onClick={async () => {
+                                  if (
+                                    !confirm(
+                                      `Remove host "${
+                                        host.hostName ?? "Anonymous"
+                                      }" and all their players?`
+                                    )
+                                  )
+                                    return;
+                                  try {
+                                    await fetch("/api/game-session/remove", {
+                                      method: "POST",
+                                      headers: {
+                                        "Content-Type": "application/json",
+                                      },
+                                      body: JSON.stringify({
+                                        sessionId: host.id,
+                                      }),
+                                    });
+                                    // Refresh other hosts list
+                                    const allRes = await fetch(
+                                      `/api/game-session/${id}/all`,
+                                      {
+                                        cache: "no-store",
+                                      }
+                                    );
+                                    const allData = await allRes.json();
+                                    if (
+                                      allRes.ok &&
+                                      Array.isArray(allData.sessions)
+                                    ) {
+                                      const others = allData.sessions.filter(
+                                        (s: any) => s.id !== gameSessionId
+                                      );
+                                      setOtherHosts(others);
+                                    }
+                                  } catch (err) {
+                                    console.error(
+                                      "Failed to remove host:",
+                                      err
+                                    );
+                                  }
+                                }}
+                                className="rounded bg-red-600/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-white hover:bg-red-600 transition"
+                              >
+                                Remove Host
+                              </button>
                             </div>
+                            {host.players.length > 0 ? (
+                              <div className="flex flex-wrap gap-2">
+                                {host.players.map((p) => (
+                                  <div
+                                    key={`${host.id}-${p.slot}`}
+                                    className="flex-1 min-w-[130px] rounded border border-white/10 bg-[#0d1b31] px-3 py-2"
+                                  >
+                                    <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-white/70">
+                                      {p.user.name ?? `Player ${p.slot + 1}`}
+                                    </div>
+                                    <div className="mt-1 text-2xl font-black text-white">
+                                      {p.points.toLocaleString()}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-white/40 italic">
+                                No players yet
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

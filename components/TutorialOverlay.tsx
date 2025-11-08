@@ -121,20 +121,20 @@ export default function TutorialOverlay({ show, onClose }: TutorialOverlayProps)
                   <circle cx="100" cy="40" r="20" fill="#A78BFA" opacity="0.8" />
                   {/* Body */}
                   <line x1="100" y1="60" x2="100" y2="150" stroke="#A78BFA" strokeWidth="6" />
-                  {/* Arms (one hand on head) */}
-                  <line x1="100" y1="80" x2="100" y2="35" stroke="#A78BFA" strokeWidth="6" />
+                  {/* Arms (one hand going right then up to top of head) */}
+                  <path d="M 100 80 Q 130 70, 110 15" stroke="#A78BFA" strokeWidth="6" fill="none" />
                   <line x1="100" y1="80" x2="70" y2="120" stroke="#A78BFA" strokeWidth="6" />
                   {/* Legs */}
                   <line x1="100" y1="150" x2="80" y2="200" stroke="#A78BFA" strokeWidth="6" />
                   <line x1="100" y1="150" x2="120" y2="200" stroke="#A78BFA" strokeWidth="6" />
                   {/* Hands */}
-                  <circle cx="100" cy="30" r="8" fill="#A78BFA" />
+                  <circle cx="110" cy="15" r="8" fill="#A78BFA" />
                   <circle cx="70" cy="120" r="6" fill="#A78BFA" />
                 </svg>
               </div>
               <div className="flex-1 text-sm text-slate-200">
                 <p className="font-semibold text-purple-300 mb-2">One hand on top of head</p>
-                <p>Place one hand directly on or above your head, like celebrating a massive dunk!</p>
+                <p>Place one hand on or around the top/crown of your head, like celebrating a massive dunk!</p>
               </div>
             </div>
           </div>

@@ -6,6 +6,7 @@ import AuthProvider from "@/components/AuthProvider";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { SignInOut } from "@/components/SignInOut";
+import TutorialTrigger from "@/components/TutorialTrigger";
 
 export const metadata: Metadata = {
   title: "NBA Gesture Predictor",
@@ -21,7 +22,7 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen bg-black text-white">
-        <header className="fixed inset-x-0 top-0 z-30 mt-2 bg-transparent backdrop-blur-2xl">
+        <header className="fixed inset-x-0 top-0 z-30  bg-transparent backdrop-blur-2xl">
           <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-2 sm:px-6 lg:px-10">
             <Link
               href="/"
@@ -37,6 +38,7 @@ export default async function RootLayout({
               <span className="hidden sm:inline">NBA Gesture Predictor</span>
             </Link>
             <nav className="flex items-center gap-5 text-[0.6rem] font-semibold tracking-[0.35em] text-emerald-100/80 uppercase">
+              <TutorialTrigger />
               <Link
                 href="/join"
                 className="text-emerald-300 hover:text-emerald-200"
@@ -48,7 +50,7 @@ export default async function RootLayout({
           </div>
         </header>
         <AuthProvider>
-          <main className="mx-auto">{children}</main>
+          <main className="mx-auto mt-6">{children}</main>
         </AuthProvider>
       </body>
     </html>

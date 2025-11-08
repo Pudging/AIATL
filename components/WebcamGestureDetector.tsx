@@ -435,19 +435,10 @@ export default function WebcamGestureDetector({
               ctx.stroke();
             }
           } else {
-            const pad = 14;
-            const isLeft = label === "Left Player";
-            const msg = `${label}: No pose`;
             ctx.save();
             ctx.font = "14px ui-sans-serif, system-ui, -apple-system";
             ctx.fillStyle = "rgba(15, 23, 42, 0.6)";
-            const textWidth = ctx.measureText(msg).width + pad * 2;
-            const x = isLeft ? pad : ctx.canvas.width - textWidth - pad;
-            ctx.fillRect(x, pad, textWidth, 30);
             ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-            ctx.textAlign = isLeft ? "left" : "right";
-            const textX = isLeft ? x + pad : x + textWidth - pad;
-            ctx.fillText(msg, textX, pad + 20);
             ctx.restore();
           }
         });
@@ -1061,7 +1052,7 @@ export default function WebcamGestureDetector({
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="relative aspect-video overflow-hidden bg-[#07070e] border border-white/10 shadow-[0_25px_45px_rgba(0,0,0,0.55)]">
+      <div className="relative aspect-video rounded-lg overflow-hidden bg-[#07070e] border border-white/10 shadow-[0_25px_45px_rgba(0,0,0,0.55)]">
         <video
           ref={assignVideoRef(0)}
           className="h-full w-full object-cover"
@@ -1087,9 +1078,6 @@ export default function WebcamGestureDetector({
 
             return (
               <div key={label} className={`absolute top-3 ${position}`}>
-                <div className="rounded-md border border-white/10 bg-black/75 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.35em] text-white shadow-[0_0_12px_rgba(28,255,176,0.25)] mb-2">
-                  {displayNames?.[label] ?? label}
-                </div>
                 {shotType && (
                   <div
                     className={`rounded-lg px-3 py-2 text-sm font-bold uppercase tracking-wider animate-pulse ${
@@ -1189,25 +1177,6 @@ export default function WebcamGestureDetector({
               </div>
             );
           })}
-        </div>
-      ) : null}
-      {showShotBanner ? (
-        <div className="flex justify-center">
-          <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/20 bg-slate-900/90 px-8 py-5 text-center shadow-[0_8px_28px_rgba(0,0,0,0.55)]">
-            <span className="text-white text-3xl font-black tracking-[0.35em]">
-              SHOT DETECTED
-            </span>
-            <div className="flex flex-wrap items-center justify-center gap-3 text-xs font-semibold uppercase tracking-[0.5em] text-white/80">
-              {activeShotLabels.map((label) => (
-                <span
-                  key={label}
-                  style={{ color: PLAYER_ACCENT_COLORS[label] }}
-                >
-                  {displayNames?.[label] ?? label}
-                </span>
-              ))}
-            </div>
-          </div>
         </div>
       ) : null}
 

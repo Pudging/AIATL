@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { createPortal } from "react-dom";
 
 type TutorialOverlayProps = {
   show: boolean;
@@ -13,6 +14,11 @@ export default function TutorialOverlay({
   onClose,
 }: TutorialOverlayProps) {
   const [currentPage, setCurrentPage] = useState(0);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const pages = [
     // Page 0: Welcome
@@ -422,7 +428,7 @@ export default function TutorialOverlay({
     onClose();
   };
 
-  return (
+  const overlay = (
     <AnimatePresence>
       {show && (
         <motion.div
@@ -531,4 +537,7 @@ export default function TutorialOverlay({
       )}
     </AnimatePresence>
   );
+
+  if (!mounted) return null;
+  return createPortal(overlay, document.body);
 }

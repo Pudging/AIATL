@@ -580,6 +580,7 @@ export default function GameViewPage() {
     null
   );
   const [showTutorial, setShowTutorial] = useState(false);
+  const [showStreamSettings, setShowStreamSettings] = useState(false);
   const isTestGame = id?.toUpperCase() === "TEST001";
   const isTest002 = id?.toUpperCase() === "TEST002";
 
@@ -588,6 +589,25 @@ export default function GameViewPage() {
       setTestGameTimestamp(0);
     }
   }, [isTestGame]);
+
+  const handleStreamSync = () => {
+    if (!streamClockInput) return;
+    const matched = findStateByGameClock(streamClockInput, streamPeriodInput);
+    if (matched) {
+      const stateItem = stateQueueRef.current.find(
+        (item) =>
+          item.state.clock === matched.state.clock &&
+          item.state.period === matched.state.period
+      );
+      const nbaTimestamp = stateItem?.timestamp ?? Date.now();
+      setSyncAnchor({
+        nbaTimestamp,
+        realWorldTime: Date.now(),
+      });
+      setSyncedPeriod(streamPeriodInput);
+      setStreamGameClock(streamClockInput);
+    }
+  };
 
   // Helper: Convert game clock (MM:SS or M:SS or PT format) to seconds
   const clockToSeconds = (clock: string): number => {
@@ -1811,65 +1831,49 @@ export default function GameViewPage() {
       )}
       <div className="relative w-full px-6 pt-16 pb-16 sm:px-8 lg:px-12">
         <div className="grid gap-10 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
-          <div className="space-y-6 border border-[#1f364d] bg-[#0b1426] p-6 shadow-[0_50px_120px_rgba(0,0,0,0.65)] backdrop-blur-md transition-transform duration-300">
+          <div className="space-y-6 border rounded-lg border-[#1f364d] bg-[#0b1426] p-6 shadow-[0_50px_120px_rgba(0,0,0,0.65)] backdrop-blur-md transition-transform duration-300">
             {/* Live Session Overview */}
-            <div className="rounded-xl border border-white/10 bg-black/30 p-5 space-y-5">
+            <div className="rounded-lg border border-white/10 bg-black/30 p-5 space-y-5">
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
                   <div className="text-[11px] uppercase tracking-[0.35em] text-slate-400">
                     Game Status
                   </div>
-                  <div className="text-2xl font-bold text-white">
-                    Period {state?.period ?? "-"} •{" "}
-                    {formatClock(state?.clock ?? "")}
+                  <div className="text-2xl font-bold text-white flex flex-wrap items-center gap-4">
+                    <span>
+                      Period {state?.period ?? "-"} •{" "}
+                      {formatClock(state?.clock ?? "")}
+                    </span>
+                    <span className="text-base font-semibold text-white/80 flex items-center gap-3">
+                      <span className="flex items-center gap-1">
+                        <span className="uppercase text-[10px] tracking-[0.4em] text-emerald-200/80">
+                          Away
+                        </span>
+                        <span className="text-2xl font-black text-white">
+                          {state?.score?.away ?? 0}
+                        </span>
+                      </span>
+                      <span className="text-[10px] uppercase tracking-[0.4em] text-slate-400">
+                        /
+                      </span>
+                      <span className="flex items-center gap-1 text-purple-100">
+                        <span className="uppercase text-[10px] tracking-[0.4em] text-purple-200/80">
+                          Home
+                        </span>
+                        <span className="text-2xl font-black text-white">
+                          {state?.score?.home ?? 0}
+                        </span>
+                      </span>
+                    </span>
                   </div>
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 text-center">
-                <div className="rounded-lg border border-white/10 bg-black/40 p-3">
-                  <div className="text-xs uppercase tracking-wide text-emerald-200/80">
-                    {state?.awayTeam ?? "Away"}
-                  </div>
-                  <div className="text-4xl font-black text-white">
-                    {state?.score?.away ?? 0}
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setShowTutorial(true)}
-                    className="rounded-full bg-gradient-to-r from-blue-400/80 to-emerald-500/80 px-4  text-xs font-semibold uppercase tracking-[0.3em] text-blue-950 transition hover:from-blue-400 hover:to-emerald-400 flex items-center "
-                    title="Tutorial"
-                  >
-                    <svg
-                      className="h-3.5 w-3.5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                    Tutorial
-                  </button>
-                  <button
-                    onClick={openDebugWindow}
-                    className="rounded-full bg-gradient-to-r from-emerald-400/80 to-purple-500/80 px-1 py-1.5 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-950 transition hover:from-emerald-400 hover:to-purple-400"
-                  >
-                    Open Live Debug
-                  </button>
-                </div>
-                <div className="space-y-1 text-right">
-                  <div className="text-emerald-300 font-mono">
-                    Live: Update #{liveUpdateCount}
-                  </div>
-                  <div className="text-4xl font-black text-white">
-                    {state?.score?.home ?? 0}
-                  </div>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowStreamSettings(true)}
+                  className="rounded-full border border-emerald-400/50 bg-black/40 px-4 py-1 text-[0.55rem] font-semibold uppercase tracking-[0.35em] text-emerald-100 transition hover:border-emerald-200 hover:text-white"
+                >
+                  Stream Settings
+                </button>
               </div>
             </div>
 
@@ -1921,11 +1925,13 @@ export default function GameViewPage() {
               </div>
             )}
 
-            {/* Last Shot Taken */}
+            {/* Featured Player */}
             {state?.lastShot && state.lastShot.playerName && (
-              <div className="rounded-lg border border-white/10 bg-gradient-to-r from-emerald-500/15 to-purple-500/20 p-3">
-                <div className="text-xs opacity-70 mb-1">Last Shot</div>
-                <div className="text-lg font-semibold">
+              <div className="rounded-lg border border-white/10 bg-gradient-to-r from-emerald-500/15 to-purple-500/20 px-3 py-2 text-left">
+                <div className="text-[10px] uppercase tracking-[0.3em] text-emerald-200/80">
+                  Last Shot
+                </div>
+                <div className="text-base font-semibold text-white">
                   {state.lastShot.playerName}
                   {state.lastShot.teamTricode && (
                     <span className="ml-2 text-sm opacity-75">
@@ -1933,12 +1939,13 @@ export default function GameViewPage() {
                     </span>
                   )}
                 </div>
+                <div className="text-xs text-emerald-100/70">
+                  {state.lastShot.shotResult ?? "Live update"}
+                </div>
               </div>
             )}
-
-            {/* Featured Batter */}
-            <div className="rounded-xl border border-slate-700/50 bg-[#1a1d29] p-4 shadow-lg border-l-2 border-l-green-500">
-              <div className="flex items-start justify-between">
+            <div className="rounded-xl border border-slate-700/50 bg-[#1a1d29] p-4 shadow-lg border-l-2 border-l-green-500 space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="flex items-center gap-4">
                   {state?.ballHandler?.name && (
                     <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-full border-2 border-blue-500/50 bg-[#0f1419]">
@@ -1972,6 +1979,7 @@ export default function GameViewPage() {
                       />
                     </div>
                   )}
+
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                       Featured Player
@@ -2147,9 +2155,6 @@ export default function GameViewPage() {
                       )}
                     </div>
                   </div>
-                  <div className="border border-white/10 bg-[#131f35] px-3 py-2 text-xs text-slate-300">
-                    Parlay boost ready
-                  </div>
                 </div>
                 {state?.shooter?.liveStats ? (
                   <div className="mt-4 grid grid-cols-5 gap-2 text-center text-xs uppercase tracking-[0.25em] text-slate-300">
@@ -2215,7 +2220,7 @@ export default function GameViewPage() {
           </div>
 
           {/* Webcam + Gesture Detector */}
-          <div className="relative rounded-[48px] border border-white/10 bg-black/45 p-4 lg:p-6 shadow-lg shadow-black/50">
+          <div className="relative rounded-lg border border-white/10 bg-black/45 p-4 lg:p-6 shadow-lg shadow-black/50">
             <WebcamGestureDetector
               debug
               activeLabelsOverride={assignedLabels}
@@ -2539,80 +2544,6 @@ export default function GameViewPage() {
                 }
               }}
             />
-            <div className="mt-6 rounded-2xl border border-white/10 bg-black/30 p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] uppercase tracking-[0.3em] text-slate-300">
-                  Stream Controls
-                </span>
-                <span className="text-sm font-bold text-white">
-                  Delay {streamDelay}s
-                </span>
-              </div>
-              <div>
-                <input
-                  type="range"
-                  min="0"
-                  max="30"
-                  step="1"
-                  value={streamDelay}
-                  onChange={(e) => setStreamDelay(Number(e.target.value))}
-                  className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-emerald-400"
-                />
-                <div className="text-xs opacity-60 mt-1">
-                  Popups fire {Math.max(0, streamDelay - 3)}s ahead of your
-                  feed.
-                </div>
-              </div>
-              <div className="grid gap-2 md:grid-cols-[2fr_1fr]">
-                <input
-                  type="text"
-                  placeholder="MM:SS"
-                  value={streamClockInput}
-                  onChange={(e) => setStreamClockInput(e.target.value)}
-                  className="rounded bg-white/10 px-2 py-1 text-sm text-white placeholder:text-white/40 border border-white/20 focus:border-emerald-400 focus:outline-none"
-                />
-                <input
-                  type="number"
-                  min="1"
-                  max="4"
-                  placeholder="Period"
-                  value={streamPeriodInput}
-                  onChange={(e) => setStreamPeriodInput(Number(e.target.value))}
-                  className="rounded bg-white/10 px-2 py-1 text-sm text-white placeholder:text-white/40 border border-white/20 focus:border-emerald-400 focus:outline-none"
-                />
-              </div>
-              <button
-                onClick={() => {
-                  if (!streamClockInput) return;
-                  const matched = findStateByGameClock(
-                    streamClockInput,
-                    streamPeriodInput
-                  );
-                  if (matched) {
-                    const stateItem = stateQueueRef.current.find(
-                      (item) =>
-                        item.state.clock === matched.state.clock &&
-                        item.state.period === matched.state.period
-                    );
-                    const nbaTimestamp = stateItem?.timestamp ?? Date.now();
-                    setSyncAnchor({
-                      nbaTimestamp,
-                      realWorldTime: Date.now(),
-                    });
-                    setSyncedPeriod(streamPeriodInput);
-                    setStreamGameClock(streamClockInput);
-                  }
-                }}
-                className="w-full rounded bg-gradient-to-r from-emerald-500/80 to-purple-500/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white transition hover:from-emerald-400 hover:to-purple-400"
-              >
-                Sync To Clock
-              </button>
-              {syncAnchor && (
-                <div className="text-xs text-emerald-200/70">
-                  Synced to Period {syncedPeriod} • {streamGameClock}
-                </div>
-              )}
-            </div>
             {overlay && (
               <ScoreAnimation
                 mode={overlay}
@@ -2679,6 +2610,85 @@ export default function GameViewPage() {
         points={pointsEarned}
         label={pointsEarnedLabel ?? undefined}
       />
+      {showStreamSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-emerald-400/30 bg-[#0b1527] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.65)]">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <h3 className="text-lg font-semibold uppercase tracking-[0.3em] text-emerald-200">
+                Stream Settings
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowStreamSettings(false)}
+                className="rounded-full border border-white/20 px-3 py-1 text-xs uppercase tracking-[0.3em] text-white/70 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+            <div className="mt-5 space-y-5">
+              <div>
+                <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-300">
+                  <span>Stream Delay</span>
+                  <span>{streamDelay}s</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="30"
+                  step="1"
+                  value={streamDelay}
+                  onChange={(e) => setStreamDelay(Number(e.target.value))}
+                  className="mt-3 h-2 w-full cursor-pointer appearance-none rounded bg-white/10 accent-emerald-400"
+                />
+                <p className="mt-1 text-xs text-slate-400">
+                  Popups fire {Math.max(0, streamDelay - 3)}s ahead of your
+                  broadcast to offset delays.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <div className="text-xs uppercase tracking-[0.3em] text-slate-300">
+                  Sync To Game Clock
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="MM:SS"
+                    value={streamClockInput}
+                    onChange={(e) => setStreamClockInput(e.target.value)}
+                    className="flex-1 rounded bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 border border-white/20 focus:border-emerald-400 focus:outline-none"
+                  />
+                  <input
+                    type="number"
+                    min="1"
+                    max="4"
+                    placeholder="Period"
+                    value={streamPeriodInput}
+                    onChange={(e) =>
+                      setStreamPeriodInput(Number(e.target.value))
+                    }
+                    className="w-24 rounded bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 border border-white/20 focus:border-emerald-400 focus:outline-none"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleStreamSync();
+                    setShowStreamSettings(false);
+                  }}
+                  className="w-full rounded bg-gradient-to-r from-emerald-500 to-purple-500 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white transition hover:brightness-110"
+                >
+                  Sync Now
+                </button>
+                {syncAnchor && (
+                  <div className="text-xs text-emerald-200/70">
+                    Synced to Period {syncedPeriod} • {streamGameClock}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <TutorialOverlay
         show={showTutorial}
         onClose={() => setShowTutorial(false)}

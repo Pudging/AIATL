@@ -2311,11 +2311,31 @@ export default function GameViewPage() {
                             className="mb-1 whitespace-nowrap text-[9px] font-semibold uppercase tracking-[0.35em]"
                             style={{ color: LABEL_COLORS[label] }}
                           >
-                            {label === "Left Player"
-                              ? playersBySlot[0]?.name ?? label
-                              : label === "Center Player"
-                              ? playersBySlot[1]?.name ?? label
-                              : playersBySlot[2]?.name ?? label}
+                            {(() => {
+                              const slotIndex =
+                                label === "Left Player"
+                                  ? 0
+                                  : label === "Center Player"
+                                  ? 1
+                                  : 2;
+                              const player = playersBySlot[slotIndex];
+                              const displayName = player?.name ?? label;
+
+                              if (player?.id) {
+                                return (
+                                  <a
+                                    href={`/stats?userId=${player.id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="hover:underline hover:opacity-80 transition"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {displayName}
+                                  </a>
+                                );
+                              }
+                              return displayName;
+                            })()}
                           </div>
                           <motion.div
                             className={`${getTextSize()} leading-none font-extrabold tabular-nums text-flash`}
@@ -2510,7 +2530,19 @@ export default function GameViewPage() {
                                     className="flex-1 min-w-[130px] rounded border border-white/10 bg-[#0d1b31] px-3 py-2"
                                   >
                                     <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-white/70">
-                                      {p.user.name ?? `Player ${p.slot + 1}`}
+                                      {p.user.id ? (
+                                        <a
+                                          href={`/stats?userId=${p.user.id}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="hover:underline hover:text-emerald-300 transition"
+                                        >
+                                          {p.user.name ??
+                                            `Player ${p.slot + 1}`}
+                                        </a>
+                                      ) : (
+                                        p.user.name ?? `Player ${p.slot + 1}`
+                                      )}
                                     </div>
                                     <div className="mt-1 text-2xl font-black text-white">
                                       {p.points.toLocaleString()}

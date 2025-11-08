@@ -1,13 +1,16 @@
-'use client';
+"use client";
 
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from "framer-motion";
 
 type Props = {
   show: boolean;
   points: number;
+  label?: string;
 };
 
-export default function PointsEarnedOverlay({ show, points }: Props) {
+export default function PointsEarnedOverlay({ show, points, label }: Props) {
+  const isPositive = points >= 0;
+  const absPoints = Math.abs(points);
   return (
     <AnimatePresence>
       {show && (
@@ -16,27 +19,33 @@ export default function PointsEarnedOverlay({ show, points }: Props) {
           initial={{ opacity: 0, scale: 0 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 2 }}
-          transition={{ duration: 0.4, ease: 'easeOut' }}
+          transition={{ duration: 0.4, ease: "easeOut" }}
           className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none"
         >
           {/* Explosion rings */}
           <motion.div
-            className="absolute w-96 h-96 rounded-full border-8 border-green-400/50"
+            className={`absolute w-96 h-96 rounded-full border-8 ${
+              isPositive ? "border-green-400/50" : "border-red-400/50"
+            }`}
             initial={{ scale: 0, opacity: 1 }}
             animate={{ scale: 3, opacity: 0 }}
-            transition={{ duration: 1.5, ease: 'easeOut' }}
+            transition={{ duration: 1.5, ease: "easeOut" }}
           />
           <motion.div
-            className="absolute w-96 h-96 rounded-full border-8 border-yellow-400/50"
+            className={`absolute w-96 h-96 rounded-full border-8 ${
+              isPositive ? "border-yellow-400/50" : "border-orange-400/50"
+            }`}
             initial={{ scale: 0, opacity: 1 }}
             animate={{ scale: 2.5, opacity: 0 }}
-            transition={{ duration: 1.3, ease: 'easeOut', delay: 0.1 }}
+            transition={{ duration: 1.3, ease: "easeOut", delay: 0.1 }}
           />
           <motion.div
-            className="absolute w-96 h-96 rounded-full border-8 border-orange-400/50"
+            className={`absolute w-96 h-96 rounded-full border-8 ${
+              isPositive ? "border-orange-400/50" : "border-red-500/50"
+            }`}
             initial={{ scale: 0, opacity: 1 }}
             animate={{ scale: 2, opacity: 0 }}
-            transition={{ duration: 1.1, ease: 'easeOut', delay: 0.2 }}
+            transition={{ duration: 1.1, ease: "easeOut", delay: 0.2 }}
           />
 
           {/* Main points display */}
@@ -44,44 +53,62 @@ export default function PointsEarnedOverlay({ show, points }: Props) {
             initial={{ scale: 0, rotate: -180 }}
             animate={{ scale: 1, rotate: 0 }}
             exit={{ scale: 0, rotate: 180 }}
-            transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+            transition={{ type: "spring", stiffness: 200, damping: 15 }}
             className="relative"
           >
             {/* Glow background */}
             <motion.div
-              className="absolute inset-0 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full blur-3xl"
+              className={`absolute inset-0 rounded-full blur-3xl ${
+                isPositive
+                  ? "bg-gradient-to-br from-yellow-400 to-orange-500"
+                  : "bg-gradient-to-br from-red-400 to-orange-500"
+              }`}
               animate={{
                 scale: [1, 1.3, 1],
-                opacity: [0.6, 0.9, 0.6]
+                opacity: [0.6, 0.9, 0.6],
               }}
               transition={{ duration: 1, repeat: Infinity }}
             />
 
             {/* Points container */}
-            <div className="relative bg-gradient-to-br from-yellow-400 via-orange-500 to-red-500 rounded-3xl p-8 border-4 border-white shadow-2xl">
+            <div
+              className={`relative rounded-3xl p-8 border-4 border-white shadow-2xl ${
+                isPositive
+                  ? "bg-gradient-to-br from-yellow-400 via-orange-500 to-red-500"
+                  : "bg-gradient-to-br from-red-500 via-orange-500 to-yellow-500"
+              }`}
+            >
               <motion.div
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: 0.2 }}
                 className="text-center"
               >
-                <div className="text-2xl font-bold text-white mb-2 uppercase tracking-wider">
-                  Points Earned!
+                <div
+                  className={`text-2xl font-bold text-white mb-1 uppercase tracking-wider`}
+                >
+                  {isPositive ? "Points Earned!" : "Points Lost"}
                 </div>
+                {label ? (
+                  <div className="text-sm text-white/90 mb-2">{label}</div>
+                ) : null}
                 <motion.div
                   animate={{
                     scale: [1, 1.1, 1],
                     textShadow: [
-                      '0 0 20px rgba(255,255,255,0.8)',
-                      '0 0 40px rgba(255,255,255,1)',
-                      '0 0 20px rgba(255,255,255,0.8)'
-                    ]
+                      "0 0 20px rgba(255,255,255,0.8)",
+                      "0 0 40px rgba(255,255,255,1)",
+                      "0 0 20px rgba(255,255,255,0.8)",
+                    ],
                   }}
                   transition={{ duration: 0.8, repeat: Infinity }}
-                  className="text-8xl font-black text-white"
-                  style={{ textShadow: '0 0 30px rgba(255,255,255,0.9)' }}
+                  className={`text-8xl font-black ${
+                    isPositive ? "text-white" : "text-white"
+                  }`}
+                  style={{ textShadow: "0 0 30px rgba(255,255,255,0.9)" }}
                 >
-                  +{points}
+                  {isPositive ? "+" : "−"}
+                  {absPoints}
                 </motion.div>
               </motion.div>
             </div>
@@ -92,22 +119,32 @@ export default function PointsEarnedOverlay({ show, points }: Props) {
                 key={`sparkle-${i}`}
                 className="absolute w-3 h-3 rounded-full"
                 style={{
-                  backgroundColor: ['#fbbf24', '#10b981', '#3b82f6', '#ef4444', '#f59e0b'][i % 5],
-                  left: '50%',
-                  top: '50%'
+                  backgroundColor: isPositive
+                    ? ["#fbbf24", "#10b981", "#3b82f6", "#ef4444", "#f59e0b"][
+                        i % 5
+                      ]
+                    : ["#ef4444", "#f59e0b", "#f87171", "#fb7185", "#fbbf24"][
+                        i % 5
+                      ],
+                  left: "50%",
+                  top: "50%",
                 }}
                 initial={{ x: 0, y: 0, opacity: 1, scale: 1 }}
                 animate={{
-                  x: (Math.cos((i / 30) * Math.PI * 2) * 200) + (Math.random() - 0.5) * 100,
-                  y: (Math.sin((i / 30) * Math.PI * 2) * 200) + (Math.random() - 0.5) * 100,
+                  x:
+                    Math.cos((i / 30) * Math.PI * 2) * 200 +
+                    (Math.random() - 0.5) * 100,
+                  y:
+                    Math.sin((i / 30) * Math.PI * 2) * 200 +
+                    (Math.random() - 0.5) * 100,
                   opacity: 0,
                   scale: 0,
-                  rotate: Math.random() * 720
+                  rotate: Math.random() * 720,
                 }}
                 transition={{
                   duration: 1.5,
-                  delay: 0.2 + (i * 0.02),
-                  ease: 'easeOut'
+                  delay: 0.2 + i * 0.02,
+                  ease: "easeOut",
                 }}
               />
             ))}
@@ -116,10 +153,12 @@ export default function PointsEarnedOverlay({ show, points }: Props) {
             {[...Array(12)].map((_, i) => (
               <motion.div
                 key={`star-${i}`}
-                className="absolute text-yellow-300 text-4xl"
+                className={`absolute text-4xl ${
+                  isPositive ? "text-yellow-300" : "text-red-300"
+                }`}
                 style={{
-                  left: '50%',
-                  top: '50%'
+                  left: "50%",
+                  top: "50%",
                 }}
                 initial={{ x: 0, y: 0, opacity: 0, scale: 0 }}
                 animate={{
@@ -127,12 +166,12 @@ export default function PointsEarnedOverlay({ show, points }: Props) {
                   y: Math.sin((i / 12) * Math.PI * 2) * 150,
                   opacity: [0, 1, 0],
                   scale: [0, 1.5, 0],
-                  rotate: [0, 180]
+                  rotate: [0, 180],
                 }}
                 transition={{
                   duration: 1.2,
-                  delay: 0.3 + (i * 0.05),
-                  ease: 'easeOut'
+                  delay: 0.3 + i * 0.05,
+                  ease: "easeOut",
                 }}
               >
                 ★
@@ -143,10 +182,12 @@ export default function PointsEarnedOverlay({ show, points }: Props) {
             {[...Array(8)].map((_, i) => (
               <motion.div
                 key={`money-${i}`}
-                className="absolute text-green-400 text-5xl font-bold"
+                className={`absolute text-5xl font-bold ${
+                  isPositive ? "text-green-400" : "text-red-400"
+                }`}
                 style={{
-                  left: '50%',
-                  top: '50%'
+                  left: "50%",
+                  top: "50%",
                 }}
                 initial={{ x: 0, y: 0, opacity: 0, scale: 0 }}
                 animate={{
@@ -154,15 +195,15 @@ export default function PointsEarnedOverlay({ show, points }: Props) {
                   y: -200 - Math.random() * 100,
                   opacity: [0, 1, 1, 0],
                   scale: [0, 1, 1, 0.5],
-                  rotate: (Math.random() - 0.5) * 360
+                  rotate: (Math.random() - 0.5) * 360,
                 }}
                 transition={{
                   duration: 2,
-                  delay: 0.4 + (i * 0.1),
-                  ease: 'easeOut'
+                  delay: 0.4 + i * 0.1,
+                  ease: "easeOut",
                 }}
               >
-                $
+                {isPositive ? "$" : "−"}
               </motion.div>
             ))}
           </motion.div>
@@ -179,4 +220,3 @@ export default function PointsEarnedOverlay({ show, points }: Props) {
     </AnimatePresence>
   );
 }
-

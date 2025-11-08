@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import * as posedetection from "@tensorflow-models/pose-detection";
 import "@tensorflow/tfjs-backend-webgl";
 import * as tf from "@tensorflow/tfjs";
@@ -41,11 +48,17 @@ function createPlayerMap<T>(initializer: (label: PlayerLabel) => T) {
 type Props = {
   onShootGesture?: (player?: PlayerLabel) => void;
   debug?: boolean;
+  extraContent?: ReactNode;
+  onActiveLabelsChange?: (labels: PlayerLabel[]) => void;
+  lanePoints?: Record<PlayerLabel, number | null>;
 };
 
 export default function WebcamGestureDetector({
   onShootGesture,
   debug = true,
+  extraContent,
+  onActiveLabelsChange,
+  lanePoints,
 }: Props) {
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
@@ -239,17 +252,14 @@ export default function WebcamGestureDetector({
         .slice()
         .sort((a, b) => getPoseCenterX(a) - getPoseCenterX(b));
       const videoWidth = videoRefs.current[0]?.videoWidth || 640;
-      const fallbackTargets = activeLabels.reduce(
-        (acc, label, index) => {
-          const ratio =
-            activeLabels.length === 1
-              ? 0.5
-              : (index + 1) / (activeLabels.length + 1);
-          acc[label] = videoWidth * ratio;
-          return acc;
-        },
-        {} as Record<PlayerLabel, number>
-      );
+      const fallbackTargets = activeLabels.reduce((acc, label, index) => {
+        const ratio =
+          activeLabels.length === 1
+            ? 0.5
+            : (index + 1) / (activeLabels.length + 1);
+        acc[label] = videoWidth * ratio;
+        return acc;
+      }, {} as Record<PlayerLabel, number>);
       const prevCenters = createPlayerMap((label) =>
         getPoseCenterX(lastPlayerPosesRef.current[label])
       );
@@ -274,8 +284,8 @@ export default function WebcamGestureDetector({
           }
         });
         if (!bestLabel) break;
-        assignmentsByLabel[bestLabel] = pose;
-        remaining.delete(bestLabel);
+        assignmentsByLabel[bestLabel as PlayerLabel] = pose;
+        remaining.delete(bestLabel as PlayerLabel);
       }
 
       return activeLabels.map((label) => ({
@@ -406,6 +416,10 @@ export default function WebcamGestureDetector({
       }
     });
   }, [activeLabels]);
+
+  useEffect(() => {
+    onActiveLabelsChange?.(activeLabels);
+  }, [activeLabels, onActiveLabelsChange]);
 
   function isShootingGesture(
     pose: posedetection.Pose | null,
@@ -565,10 +579,10 @@ export default function WebcamGestureDetector({
       const INFER_INTERVAL_MS = 1000 / 15; // ~15 FPS
       if (now - (lastInferTsRef.current || 0) >= INFER_INTERVAL_MS) {
         try {
-          const opts: posedetection.PoseDetectorEstimateConfig =
+          const opts =
             currentModelRef.current === "MULTI_LIGHTNING"
-              ? { maxPoses: 3, flipHorizontal: true }
-              : { flipHorizontal: true };
+              ? ({ maxPoses: 3, flipHorizontal: true } as const)
+              : ({ flipHorizontal: true } as const);
           poses = await detector.estimatePoses(video, opts);
           lastInferTsRef.current = now;
           lastDetectionsRef.current = poses;
@@ -662,10 +676,9 @@ export default function WebcamGestureDetector({
           max={3}
           value={playerCount}
           onChange={(event) =>
-            setPlayerCount(Math.min(3, Math.max(1, Number(event.target.value))) as
-              | 1
-              | 2
-              | 3)
+            setPlayerCount(
+              Math.min(3, Math.max(1, Number(event.target.value))) as 1 | 2 | 3
+            )
           }
           className="w-full accent-sky-400"
         />
@@ -713,6 +726,51 @@ export default function WebcamGestureDetector({
           </div>
         </div>
       </div>
+      {extraContent ? <div>{extraContent}</div> : null}
+      {lanePoints ? (
+        <div className="flex items-stretch justify-between gap-3">
+          {activeLabels.map((label) => {
+            const delta = lanePoints[label] ?? null;
+            const isPositive = (delta ?? 0) > 0;
+            const isNegative = (delta ?? 0) < 0;
+            const display =
+              delta === null || delta === undefined
+                ? null
+                : `${isPositive ? "+" : isNegative ? "−" : ""}${Math.abs(
+                    delta ?? 0
+                  )}`;
+            return (
+              <div key={label} className="flex-1 flex justify-center">
+                {display !== null ? (
+                  <div
+                    className="rounded-xl border px-4 py-2 text-center bg-slate-900/80"
+                    style={{ borderColor: `${PLAYER_ACCENT_COLORS[label]}55` }}
+                  >
+                    <div
+                      className="text-[10px] uppercase tracking-wider font-semibold mb-1"
+                      style={{ color: PLAYER_ACCENT_COLORS[label] }}
+                    >
+                      {label}
+                    </div>
+                    <div
+                      className={`font-extrabold leading-none ${
+                        isPositive
+                          ? "text-green-400"
+                          : isNegative
+                          ? "text-red-400"
+                          : "text-white/80"
+                      }`}
+                      style={{ fontSize: "2.75rem" }}
+                    >
+                      {display}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
       {showShotBanner ? (
         <div className="flex justify-center">
           <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/20 bg-slate-900/90 px-8 py-5 text-center shadow-[0_8px_28px_rgba(0,0,0,0.55)]">
@@ -721,7 +779,10 @@ export default function WebcamGestureDetector({
             </span>
             <div className="flex flex-wrap items-center justify-center gap-3 text-xs font-semibold uppercase tracking-[0.5em] text-white/80">
               {activeShotLabels.map((label) => (
-                <span key={label} style={{ color: PLAYER_ACCENT_COLORS[label] }}>
+                <span
+                  key={label}
+                  style={{ color: PLAYER_ACCENT_COLORS[label] }}
+                >
                   {label}
                 </span>
               ))}

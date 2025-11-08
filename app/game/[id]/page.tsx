@@ -121,7 +121,7 @@ export default function GameViewPage() {
 				</div>
 			</div>
 			<div className="relative glass rounded-xl p-3">
-				<WebcamGestureDetector onShootGesture={() => registerPrediction({ ts: Date.now(), period: state?.period, clock: state?.clock })} />
+				<WebcamGestureDetector debug onShootGesture={() => registerPrediction({ ts: Date.now(), period: state?.period, clock: state?.clock })} />
 				{overlay && <ScoreAnimation mode={overlay} />}
 				{error && <div className="absolute bottom-3 left-3 right-3 text-xs text-red-400">{error}</div>}
 			</div>

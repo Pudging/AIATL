@@ -52,9 +52,22 @@ export function parseGameState(playByPlayJson: any): ParsedGameState {
   const actions: any[] = Array.isArray(game.actions) ? game.actions : [];
   const lastAction = actions.length ? actions[actions.length - 1] : null;
 
+  // Derive score from the latest action when available; fallback to game-level score
+  let derivedHome: number | null = null;
+  let derivedAway: number | null = null;
+  for (let i = actions.length - 1; i >= 0; i--) {
+    const a = actions[i];
+    const sh = a?.scoreHome ?? a?.homeScore ?? a?.scoreHomeTotal ?? null;
+    const sa = a?.scoreAway ?? a?.awayScore ?? a?.scoreAwayTotal ?? null;
+    if ((sh !== null && sh !== undefined) || (sa !== null && sa !== undefined)) {
+      derivedHome = Number(sh ?? derivedHome ?? 0);
+      derivedAway = Number(sa ?? derivedAway ?? 0);
+      break;
+    }
+  }
   const score = {
-    home: Number(game.homeTeam?.score) || 0,
-    away: Number(game.awayTeam?.score) || 0
+    home: derivedHome ?? (Number(game.homeTeam?.score) || 0),
+    away: derivedAway ?? (Number(game.awayTeam?.score) || 0)
   };
 
   const playerStats = new Map<string, { name: string; teamTricode?: string; fga: number; fgm: number; pts: number }>();
@@ -66,8 +79,8 @@ export function parseGameState(playByPlayJson: any): ParsedGameState {
       if (!personId) continue;
       const entry = playerStats.get(personId) || { name: name ?? 'Unknown', teamTricode: team, fga: 0, fgm: 0, pts: 0 };
       entry.fga += 1;
-      const shotResult = (a.shotResult || a.subType || a.result)?.toString().toLowerCase?.() ?? '';
-      const made = shotResult.includes('made');
+      const shotResult = (a.shotResult || a.subType || a.result || '').toString().toLowerCase?.() ?? '';
+      const made = shotResult.includes('made') || shotResult === 'make';
       if (made) {
         entry.fgm += 1;
         const is3 = (a.subType || a.shotType)?.toString().toLowerCase?.().includes('3') || a.points === 3 || a.pointsTotal === 3;

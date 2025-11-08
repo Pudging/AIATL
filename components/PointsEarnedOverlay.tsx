@@ -7,7 +7,7 @@ type Props = {
   points: number;
   label?: string;
 };
-
+// comment
 export default function PointsEarnedOverlay({ show, points, label }: Props) {
   const isPositive = points >= 0;
   const absPoints = Math.abs(points);

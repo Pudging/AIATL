@@ -3,13 +3,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
+import dynamic from "next/dynamic";
 import type { ParsedGameState } from "@/components/types";
-import WebcamGestureDetector from "@/components/WebcamGestureDetector";
 import ScoreAnimation from "@/components/ScoreAnimation";
 import ShotIncomingOverlay from "@/components/ShotIncomingOverlay";
 import ShotResultOverlay from "@/components/ShotResultOverlay";
 import PointsEarnedOverlay from "@/components/PointsEarnedOverlay";
 import MultiPlayerPointsOverlay from "@/components/MultiPlayerPointsOverlay";
+
+const WebcamGestureDetector = dynamic(
+  () => import("@/components/WebcamGestureDetector"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="text-center text-sm opacity-70">Loading camera…</div>
+    ),
+  }
+);
 
 export default function GameViewPage() {
   const PLAYER_LABELS = [
@@ -32,7 +42,7 @@ export default function GameViewPage() {
     Record<PlayerLabel, number>
   >(() => {
     // For test game, start at 100k
-    const isTest = id?.toUpperCase() === 'TEST001';
+    const isTest = id?.toUpperCase() === "TEST001";
     return {
       "Left Player": isTest ? 100000 : 0,
       "Right Player": isTest ? 100000 : 0,
@@ -302,7 +312,7 @@ export default function GameViewPage() {
             });
             return next;
           });
-          
+
           // Show individual overlays for each player
           setPlayerPointsDisplay((prev) => {
             const next = { ...prev };
@@ -311,7 +321,7 @@ export default function GameViewPage() {
             });
             return next;
           });
-          
+
           // Hide overlays after 2.5 seconds
           setTimeout(() => {
             setPlayerPointsDisplay({
@@ -320,7 +330,7 @@ export default function GameViewPage() {
               "Center Player": { show: false, points: 0 },
             });
           }, 2500);
-          
+
           // Keep old single overlay for backwards compatibility (can remove later)
           setPointsEarned(delta);
           setPointsEarnedLabel(
@@ -1014,24 +1024,30 @@ export default function GameViewPage() {
                 const points = pointsByPlayer[label] ?? 0;
                 const digitCount = points.toLocaleString().length;
                 const playerCount = activeLabels.length;
-                
+
                 // Dynamic text size based on digit count AND player count
                 const getTextSize = () => {
                   if (playerCount === 3) {
                     // Smaller sizes for 3 players
-                    if (digitCount <= 4) return "text-3xl sm:text-4xl md:text-5xl lg:text-6xl";
-                    if (digitCount <= 6) return "text-2xl sm:text-3xl md:text-4xl lg:text-5xl";
-                    if (digitCount <= 8) return "text-xl sm:text-2xl md:text-3xl lg:text-4xl";
+                    if (digitCount <= 4)
+                      return "text-3xl sm:text-4xl md:text-5xl lg:text-6xl";
+                    if (digitCount <= 6)
+                      return "text-2xl sm:text-3xl md:text-4xl lg:text-5xl";
+                    if (digitCount <= 8)
+                      return "text-xl sm:text-2xl md:text-3xl lg:text-4xl";
                     return "text-lg sm:text-xl md:text-2xl lg:text-3xl";
                   } else {
                     // Larger sizes for 1-2 players
-                    if (digitCount <= 4) return "text-5xl sm:text-6xl md:text-7xl lg:text-8xl";
-                    if (digitCount <= 6) return "text-4xl sm:text-5xl md:text-6xl lg:text-7xl";
-                    if (digitCount <= 8) return "text-3xl sm:text-4xl md:text-5xl lg:text-6xl";
+                    if (digitCount <= 4)
+                      return "text-5xl sm:text-6xl md:text-7xl lg:text-8xl";
+                    if (digitCount <= 6)
+                      return "text-4xl sm:text-5xl md:text-6xl lg:text-7xl";
+                    if (digitCount <= 8)
+                      return "text-3xl sm:text-4xl md:text-5xl lg:text-6xl";
                     return "text-2xl sm:text-3xl md:text-4xl lg:text-5xl";
                   }
                 };
-                
+
                 // Dynamic width based on player count
                 const getWidthClasses = () => {
                   if (playerCount === 3) {
@@ -1042,7 +1058,7 @@ export default function GameViewPage() {
                     return "flex-1 min-w-[160px] max-w-[320px]";
                   }
                 };
-                
+
                 return (
                   <motion.div
                     key={label}
@@ -1066,11 +1082,15 @@ export default function GameViewPage() {
                       className={`${getTextSize()} font-extrabold text-white leading-none tabular-nums`}
                       key={points}
                       initial={{ scale: 1 }}
-                      animate={{ 
-                        scale: playerPointsDisplay[label].show ? [1, 1.3, 1] : 1,
-                        color: playerPointsDisplay[label].show 
-                          ? (playerPointsDisplay[label].points > 0 ? "#10b981" : "#ef4444")
-                          : "#ffffff"
+                      animate={{
+                        scale: playerPointsDisplay[label].show
+                          ? [1, 1.3, 1]
+                          : 1,
+                        color: playerPointsDisplay[label].show
+                          ? playerPointsDisplay[label].points > 0
+                            ? "#10b981"
+                            : "#ef4444"
+                          : "#ffffff",
                       }}
                       transition={{ duration: 0.5 }}
                     >

@@ -79,7 +79,8 @@ export default function GameViewPage() {
   const [showShotResult, setShowShotResult] = useState(false);
   const [currentShotData, setCurrentShotData] = useState<any>(null);
   const lastProcessedShotRef = useRef<string | null>(null);
-  const [streamDelay, setStreamDelay] = useState(10);
+  const [streamGameClock, setStreamGameClock] = useState("");
+  const [streamClockInput, setStreamClockInput] = useState("");
   const [predictionWindowActive, setPredictionWindowActive] = useState(false);
   const [showPointsEarned, setShowPointsEarned] = useState(false);
   const [pointsEarned, setPointsEarned] = useState(0);
@@ -119,6 +120,64 @@ export default function GameViewPage() {
   const [isMounted, setIsMounted] = useState(false);
   const [testGameTimestamp, setTestGameTimestamp] = useState(0);
   const isTestGame = id?.toUpperCase() === "TEST001";
+
+  // Helper: Convert game clock (MM:SS or M:SS or PT format) to seconds
+  const clockToSeconds = (clock: string): number => {
+    if (!clock) return 0;
+    
+    // Handle PT format (e.g., "PT05M23.00S")
+    if (clock.startsWith("PT")) {
+      const minutesMatch = clock.match(/(\d+)M/);
+      const secondsMatch = clock.match(/(\d+(?:\.\d+)?)S/);
+      const minutes = minutesMatch ? parseInt(minutesMatch[1], 10) : 0;
+      const seconds = secondsMatch ? parseFloat(secondsMatch[1]) : 0;
+      return minutes * 60 + Math.floor(seconds);
+    }
+    
+    // Handle MM:SS format
+    const parts = clock.split(":").map((p) => parseInt(p, 10));
+    if (parts.length === 2) {
+      return parts[0] * 60 + parts[1];
+    }
+    return 0;
+  };
+
+  // Helper: Get a unique game position identifier (period + clock)
+  const getGamePosition = (state: ParsedGameState): number => {
+    const period = typeof state.period === 'number' ? state.period : parseInt(String(state.period || '1'), 10);
+    const clockSeconds = clockToSeconds(state.clock || "");
+    // Each period is 12 minutes (720 seconds)
+    // Position = (period * 720) - clockSeconds
+    // This gives us a monotonically increasing number as game progresses
+    return (period * 720) - clockSeconds;
+  };
+
+  // Helper: Find state closest to a given game clock
+  const findStateByGameClock = (targetClock: string): ParsedGameState | null => {
+    if (!targetClock || stateQueueRef.current.length === 0) return null;
+    
+    // Get the most recent state to determine current period
+    const latestState = stateQueueRef.current[stateQueueRef.current.length - 1].state;
+    const currentPeriod = latestState.period;
+    
+    const targetSeconds = clockToSeconds(targetClock);
+    let closestState: { state: ParsedGameState; diff: number } | null = null;
+    
+    // Only look at states from the same period
+    for (const item of stateQueueRef.current) {
+      if (item.state.period !== currentPeriod) continue;
+      
+      const stateClock = item.state.clock || "";
+      const stateSeconds = clockToSeconds(stateClock);
+      const diff = Math.abs(stateSeconds - targetSeconds);
+      
+      if (!closestState || diff < closestState.diff) {
+        closestState = { state: item.state, diff };
+      }
+    }
+    
+    return closestState ? closestState.state : null;
+  };
 
   // Debug logging
   useEffect(() => {
@@ -165,10 +224,11 @@ export default function GameViewPage() {
           // Add to queue with timestamp
           stateQueueRef.current.push({ state: data.state, timestamp: now });
 
-          // Remove old states (keep extra buffer)
-          stateQueueRef.current = stateQueueRef.current.filter(
-            (item) => now - item.timestamp < (streamDelay + 10) * 1000
-          );
+          // Keep last 500 states (covers ~12.5 minutes of game time at 1.5s polling)
+          // This handles even extreme stream delays of 10+ minutes
+          if (stateQueueRef.current.length > 500) {
+            stateQueueRef.current = stateQueueRef.current.slice(-500);
+          }
 
           console.log(
             `[LIVE] Update #${liveUpdateCount + 1} received at ${new Date(
@@ -189,48 +249,40 @@ export default function GameViewPage() {
       if (timer) clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, streamDelay, testGameTimestamp, isTestGame]);
+  }, [id, testGameTimestamp, isTestGame]);
 
-  // Process delayed state
+  // Process delayed state based on stream game clock
   useEffect(() => {
     const interval = setInterval(() => {
-      const now = Date.now();
-      const delayMs = streamDelay * 1000;
-
-      // Find the most recent state that is old enough to be shown (delayed)
-      const eligibleStates = stateQueueRef.current.filter(
-        (item) => now - item.timestamp >= delayMs
-      );
-
-      if (eligibleStates.length > 0) {
-        // Get the most recent eligible state
-        const targetState = eligibleStates[eligibleStates.length - 1];
-        const prevState = delayedState;
-
-        // Only update if it's actually different
-        if (
-          !prevState ||
-          targetState.state.clock !== prevState.clock ||
-          targetState.state.lastAction !== prevState.lastAction
-        ) {
-          setDelayedState(targetState.state);
-          setState(targetState.state);
-          setDelayedUpdateCount((prev) => prev + 1);
-
-          const ageSeconds = ((now - targetState.timestamp) / 1000).toFixed(1);
-          console.log(
-            `[DELAYED] Update #${
-              delayedUpdateCount + 1
-            } shown (${ageSeconds}s old) at ${new Date(
-              now
-            ).toLocaleTimeString()}`
-          );
+      if (!streamGameClock) {
+        // If no stream clock set, use most recent state
+        if (stateQueueRef.current.length > 0) {
+          const latestState = stateQueueRef.current[stateQueueRef.current.length - 1].state;
+          if (!delayedState || JSON.stringify(latestState) !== JSON.stringify(delayedState)) {
+            setDelayedState(latestState);
+            setState(latestState);
+            setDelayedUpdateCount((prev) => prev + 1);
+          }
         }
+        return;
+      }
+
+      // Find state matching stream clock
+      const matchedState = findStateByGameClock(streamGameClock);
+      
+      if (matchedState && (!delayedState || JSON.stringify(matchedState) !== JSON.stringify(delayedState))) {
+        setDelayedState(matchedState);
+        setState(matchedState);
+        setDelayedUpdateCount((prev) => prev + 1);
+        
+        console.log(
+          `[DELAYED] Showing state for game clock ${streamGameClock} (matched: ${matchedState.clock})`
+        );
       }
     }, 100);
 
     return () => clearInterval(interval);
-  }, [streamDelay, delayedState, delayedUpdateCount]);
+  }, [streamGameClock, delayedState, delayedUpdateCount]);
 
   function registerPrediction(
     label: PlayerLabel | undefined,
@@ -266,14 +318,20 @@ export default function GameViewPage() {
     lastProcessedShotRef.current = shotId;
 
     // Shot detected in live data NOW
-    // We want popup to appear (streamDelay - 3) seconds from now
-    // So the popup finishes right when the delayed stream shows the shot
-    const popupDelay = Math.max(0, (streamDelay - 3) * 1000);
+    // Calculate popup delay based on clock difference
+    let popupDelay = 0;
+    if (streamGameClock && gameState.clock) {
+      const liveClockSeconds = clockToSeconds(gameState.clock);
+      const streamClockSeconds = clockToSeconds(streamGameClock);
+      const clockDiffSeconds = liveClockSeconds - streamClockSeconds;
+      // Show popup 3 seconds before the shot appears on stream
+      popupDelay = Math.max(0, (clockDiffSeconds - 3) * 1000);
+    }
 
     console.log(
-      `Shot detected! Will show popup in ${
+      `Shot detected! Live clock: ${gameState.clock}, Stream clock: ${streamGameClock}, Popup delay: ${
         popupDelay / 1000
-      }s, countdown for 3s`
+      }s`
     );
 
     setTimeout(() => {
@@ -787,7 +845,7 @@ export default function GameViewPage() {
                     Dashboard: {isMounted ? currentTime : "--:--:--"}
                   </div>
                   <div className="text-purple-200 font-semibold">
-                    Update #{delayedUpdateCount} (-{streamDelay}s delay)
+                    Update #{delayedUpdateCount} {streamGameClock ? `(Stream: ${streamGameClock})` : "(Live)"}
                   </div>
                 </div>
                 <button
@@ -839,27 +897,48 @@ export default function GameViewPage() {
               </div>
             )}
 
-            {/* Stream Delay Slider */}
+            {/* Stream Clock Sync */}
             <div className="rounded-lg border border-white/10 bg-black/30 p-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs opacity-70">
-                  Stream Delay (seconds)
+                  Stream Game Clock
                 </span>
-                <span className="text-sm font-bold">{streamDelay}s</span>
+                <span className="text-sm font-bold">
+                  {streamGameClock || "Not Set"}
+                </span>
               </div>
-              <input
-                type="range"
-                min="0"
-                max="30"
-                step="1"
-                value={streamDelay}
-                onChange={(e) => setStreamDelay(Number(e.target.value))}
-                className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-emerald-400"
-              />
-              <div className="text-xs opacity-60 mt-1">
-                Popup appears {Math.max(0, streamDelay - 3)}s before shot on
-                your stream
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. 2:55"
+                  value={streamClockInput}
+                  onChange={(e) => setStreamClockInput(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-black/50 border border-white/20 rounded text-white text-sm focus:outline-none focus:border-emerald-400"
+                />
+                <button
+                  onClick={() => {
+                    if (streamClockInput) {
+                      setStreamGameClock(streamClockInput);
+                    }
+                  }}
+                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold rounded text-sm transition"
+                >
+                  Sync
+                </button>
               </div>
+              <div className="text-xs opacity-60 mt-2">
+                Enter the game clock showing on your stream (e.g., "4:30" or "2:15")
+              </div>
+              {streamGameClock && liveState?.clock && (
+                <div className="text-xs mt-2 space-y-1">
+                  <div className="text-emerald-300">
+                    ✓ Synced to Q{liveState.period}
+                  </div>
+                  <div className="text-white/60">
+                    Live: {liveState.clock} | Stream: {streamGameClock} | ~{Math.abs(clockToSeconds(liveState.clock) - clockToSeconds(streamGameClock))}s game time
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Live Score */}

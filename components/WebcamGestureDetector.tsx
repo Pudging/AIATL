@@ -11,6 +11,7 @@ import {
 import * as posedetection from "@tensorflow-models/pose-detection";
 import "@tensorflow/tfjs-backend-webgl";
 import * as tf from "@tensorflow/tfjs";
+import { analyzeMotionWithGemini, movenetPoseToFrame, type PoseFrame } from "@/lib/gemini";
 
 const PLAYER_LABELS = ["Left Player", "Right Player", "Center Player"] as const;
 type PlayerLabel = (typeof PLAYER_LABELS)[number];
@@ -28,6 +29,14 @@ type DebugInfo = {
   velocity: number;
   decision: boolean;
   shotType: ShotType;
+};
+
+type GeminiAnalysis = {
+  classification: string;
+  confidence: number;
+  description: string;
+  suggestedShotType?: 'normal' | 'dunk' | 'layup';
+  timestamp: number;
 };
 
 const PLAYER_COLORS: Record<PlayerLabel, string> = {
@@ -92,6 +101,30 @@ export default function WebcamGestureDetector({
   const gestureCooldownsRef = useRef<Record<PlayerLabel, number>>(
     createPlayerMap(() => 0)
   );
+  
+  // Gesture state tracking for improved detection
+  const gestureStateRef = useRef<Record<PlayerLabel, {
+    armsUpFrames: number; // How many frames arms have been up
+    lastWristPositions: { left: { x: number; y: number } | null; right: { x: number; y: number } | null };
+    wristFlickDetected: boolean;
+    flickFrame: number; // Frame when flick was detected
+  }>>(createPlayerMap(() => ({
+    armsUpFrames: 0,
+    lastWristPositions: { left: null, right: null },
+    wristFlickDetected: false,
+    flickFrame: 0
+  })));
+  
+  // Gesture history for majority voting (last 1-2 seconds)
+  const gestureHistoryRef = useRef<Record<PlayerLabel, Array<{
+    shotType: ShotType;
+    timestamp: number;
+  }>>>(createPlayerMap(() => []));
+  
+  // Gemini analysis state
+  const [geminiAnalysis, setGeminiAnalysis] = useState<GeminiAnalysis | null>(null);
+  const useGemini = false; // Feature flag - always disabled for now
+  const poseFrameBufferRef = useRef<PoseFrame[]>([]); // Buffer for collecting frames
   const eventsRef = useRef<
     { ts: number; label: string; player: PlayerLabel | null }[]
   >([]);
@@ -412,6 +445,7 @@ export default function WebcamGestureDetector({
       decision: false,
       shotType: null,
     };
+    resetGestureState(label);
   }
 
   useEffect(() => {
@@ -449,6 +483,7 @@ export default function WebcamGestureDetector({
   ): boolean {
     if (!pose) {
       resetDebugInfo(playerLabel);
+      resetGestureState(playerLabel);
       return false;
     }
     const byName = (p?: posedetection.Pose) => {
@@ -461,8 +496,9 @@ export default function WebcamGestureDetector({
       return map;
     };
     const k = byName(pose);
+    // LOWERED: More lenient confidence threshold (0.25 instead of 0.3) for poor pose detection
     const kp = (name: string) =>
-      k[name] && (k[name].score ?? 0) > 0.3 ? k[name] : undefined;
+      k[name] && (k[name].score ?? 0) > 0.25 ? k[name] : undefined;
     const ls = kp("left_shoulder"),
       rs = kp("right_shoulder");
     const le = kp("left_elbow"),
@@ -471,39 +507,106 @@ export default function WebcamGestureDetector({
       rw = kp("right_wrist");
     const nose = kp("nose");
 
-    if (!ls || !rs || (!le && !re) || (!lw && !rw)) {
+    // MORE LENIENT: Only require shoulders, allow missing elbows/wrists if we have at least one
+    if (!ls || !rs) {
+      resetDebugInfo(playerLabel);
+      return false;
+    }
+    
+    // If we have NO elbows or wrists, can't detect shot
+    if ((!le && !re) || (!lw && !rw)) {
       resetDebugInfo(playerLabel);
       return false;
     }
 
-    // Check for dunk gesture (hand on head)
-    const isDunkGesture = detectDunkGesture(lw, rw, nose);
+    // MORE LENIENT: Check if arms are up (allow detection with just one good arm)
+    const headLevel = nose ? nose.y : Math.min(ls.y, rs.y) - 25; // Use nose or estimate head position
+    
+    // Check each arm independently (more forgiving of poor detection)
+    const leftElbowUp = le ? (le.y < headLevel || le.y < ls.y - 10) : false;
+    const rightElbowUp = re ? (re.y < headLevel || re.y < rs.y - 10) : false;
+    const leftWristUp = lw ? (lw.y < headLevel || lw.y < ls.y - 10) : false;
+    const rightWristUp = rw ? (rw.y < headLevel || rw.y < rs.y - 10) : false;
+    
+    // At least one arm should be up (more lenient)
+    const elbowsUp = leftElbowUp || rightElbowUp;
+    const wristsUp = leftWristUp || rightWristUp;
+    
+    // Both arms up if we have both (ideal case)
+    const bothElbowsUp = leftElbowUp && rightElbowUp;
+    const bothWristsUp = leftWristUp && rightWristUp;
+    
+    // Check for dunk gesture (hand on head) - but only if NOT in normal shot position
+    // Prevent normal shots from being detected as dunks
+    const isDunkGesture = detectDunkGesture(lw, rw, nose) && 
+      !(bothElbowsUp && bothWristsUp); // Don't detect dunk if both arms are clearly up (normal shot)
 
     // Check for layup gesture (one arm up)
     const isLayupGesture = detectLayupGesture(lw, rw, le, re, ls, rs);
+    
+    // MORE LENIENT: Wrists level check - only if we have both wrists
+    const wristsLevel = lw && rw ? Math.abs(lw.y - rw.y) < 100 : true; // More lenient tolerance, default true if missing
+    
+    // MORE LENIENT: Arms extended check - only if we have the keypoints
+    const leftArmExtended = le && lw ? le.y < lw.y : true; // Default true if missing
+    const rightArmExtended = re && rw ? re.y < rw.y : true; // Default true if missing
+    const armsExtended = leftArmExtended || rightArmExtended; // At least one extended
 
-    // More strict checking for normal shot - BOTH arms must be clearly up
-    const elbowsUp = !!(le && re && le.y < ls.y - 20 && re.y < rs.y - 20);
-    const wristsUp = !!(lw && rw && lw.y < ls.y - 20 && rw.y < rs.y - 20);
-
-    // Both wrists should be at similar height (shooting form)
-    const wristsLevel = lw && rw ? Math.abs(lw.y - rw.y) < 80 : false;
-
-    // Determine shot type
+    // MORE LENIENT: Track gesture state over time (reduced requirement)
+    const gestureState = gestureStateRef.current[playerLabel];
+    const armsUpNow = elbowsUp && wristsUp; // Simplified - just need arms up
+    
+    if (armsUpNow) {
+      gestureState.armsUpFrames++;
+    } else {
+      gestureState.armsUpFrames = 0;
+      gestureState.wristFlickDetected = false;
+    }
+    
+    // MORE LENIENT: Detect wrist flick (lower thresholds for poor pose detection)
+    let wristFlickDetected = false;
+    if (armsUpNow && prevPose && (lw || rw)) { // Only need one wrist
+      const prevK = byName(prevPose);
+      const prevLw = prevK["left_wrist"];
+      const prevRw = prevK["right_wrist"];
+      
+      // Check left wrist if available
+      if (lw && prevLw) {
+        const leftForward = lw.x - prevLw.x;
+        const leftUpward = prevLw.y - lw.y;
+        // MUCH LOWER thresholds
+        const leftFlick = leftForward > 0.01 || leftUpward > 0.005;
+        if (leftFlick) wristFlickDetected = true;
+      }
+      
+      // Check right wrist if available
+      if (rw && prevRw) {
+        const rightForward = prevRw.x - rw.x;
+        const rightUpward = prevRw.y - rw.y;
+        // MUCH LOWER thresholds
+        const rightFlick = rightForward > 0.01 || rightUpward > 0.005;
+        if (rightFlick) wristFlickDetected = true;
+      }
+      
+      if (wristFlickDetected && !gestureState.wristFlickDetected) {
+        gestureState.wristFlickDetected = true;
+        gestureState.flickFrame = gestureState.armsUpFrames;
+      }
+    }
+    
+    // Determine shot type (more lenient)
     let shotType: ShotType = null;
     if (isDunkGesture) {
       shotType = "dunk";
     } else if (isLayupGesture) {
       shotType = "layup";
-    } else if (elbowsUp && wristsUp && wristsLevel) {
+    } else if (armsUpNow) { // Simplified - just need arms up
       shotType = "normal";
     }
 
-    if (
-      !(elbowsUp && wristsUp && wristsLevel) &&
-      !isDunkGesture &&
-      !isLayupGesture
-    ) {
+    // REMOVED: Temporal requirement - allow instant detection for quick shots
+    // If no shot type detected, return early
+    if (!shotType) {
       debugInfoRef.current[playerLabel] = {
         elbowsUp,
         wristsUp,
@@ -570,23 +673,30 @@ export default function WebcamGestureDetector({
     const forwardComponent =
       Math.max(rightForward, leftForward) * (1000 / dtMs);
 
-    // Scale-invariant threshold based on frame diagonal
+    // MUCH MORE LENIENT: Very low velocity threshold or make it optional
     const canvas = canvasRefs.current[0];
     const diag = canvas ? Math.hypot(canvas.width, canvas.height) : 1000;
-    const pxPerSecThreshold = diag * 0.04; // 4% of diagonal per second
+    const pxPerSecThreshold = diag * 0.02; // MUCH lower threshold (2% of diagonal per second)
+    const flickWindow = 10; // Longer window for flick detection
 
-    // For dunk and layup, don't require velocity
+    // MUCH MORE LENIENT: For dunk and layup, don't require velocity
     let decision = false;
     if (isDunkGesture || isLayupGesture) {
       decision = true;
     } else {
-      // Normal shot requires: both arms up, level, AND good velocity
-      decision =
-        elbowsUp &&
-        wristsUp &&
-        wristsLevel &&
-        (velocity > pxPerSecThreshold ||
-          forwardComponent > pxPerSecThreshold * 0.75);
+      // MUCH MORE LENIENT: Normal shot requires:
+      // 1. Arms up (at least one arm)
+      // 2. EITHER wrist flick detected OR any velocity OR just arms up (very lenient)
+      const flickRecent = gestureState.wristFlickDetected && 
+        (gestureState.armsUpFrames - gestureState.flickFrame) <= flickWindow;
+      
+      // MUCH MORE LENIENT: Very low velocity threshold or just any movement
+      const hasVelocity = velocity > pxPerSecThreshold * 0.5 || 
+                         forwardComponent > pxPerSecThreshold * 0.3 ||
+                         velocity > 0; // Any movement at all
+      
+      // Decision: arms up AND (flick OR velocity OR just arms up for quick shots)
+      decision = armsUpNow && (wristFlickDetected || flickRecent || hasVelocity || gestureState.armsUpFrames >= 1);
     }
 
     debugInfoRef.current[playerLabel] = {
@@ -596,10 +706,63 @@ export default function WebcamGestureDetector({
       decision,
       shotType,
     };
+    
+    // Update last wrist positions for next frame (handle missing wrists)
+    if (lw) {
+      gestureState.lastWristPositions.left = { x: lw.x, y: lw.y };
+    }
+    if (rw) {
+      gestureState.lastWristPositions.right = { x: rw.x, y: rw.y };
+    }
+    
     return decision;
   }
+  
+  function resetGestureState(label: PlayerLabel) {
+    gestureStateRef.current[label] = {
+      armsUpFrames: 0,
+      lastWristPositions: { left: null, right: null },
+      wristFlickDetected: false,
+      flickFrame: 0
+    };
+    // Clear gesture history when resetting
+    gestureHistoryRef.current[label] = [];
+  }
+  
+  // Get majority gesture type from recent history (last 1.5 seconds)
+  function getMajorityGesture(label: PlayerLabel, windowMs: number = 1500): ShotType | null {
+    const history = gestureHistoryRef.current[label];
+    const now = Date.now();
+    
+    // Filter to recent entries (last 1.5 seconds)
+    const recent = history.filter(entry => now - entry.timestamp < windowMs);
+    
+    if (recent.length === 0) return null;
+    
+    // Count occurrences of each shot type
+    const counts: Record<string, number> = {};
+    recent.forEach(entry => {
+      const key = entry.shotType || 'null';
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    
+    // Find the most common shot type
+    let maxCount = 0;
+    let majorityType: ShotType | null = null;
+    
+    Object.entries(counts).forEach(([type, count]) => {
+      if (count > maxCount && type !== 'null') {
+        maxCount = count;
+        majorityType = type as ShotType;
+      }
+    });
+    
+    // Require at least 30% of recent frames to agree (prevents false positives)
+    const threshold = Math.max(1, Math.floor(recent.length * 0.3));
+    return maxCount >= threshold ? majorityType : null;
+  }
 
-  // Helper function to detect dunk gesture (hand DIRECTLY on head)
+  // STRICTER: Helper function to detect dunk gesture (hand DIRECTLY on head)
   function detectDunkGesture(
     lw: posedetection.Keypoint | undefined,
     rw: posedetection.Keypoint | undefined,
@@ -607,18 +770,22 @@ export default function WebcamGestureDetector({
   ): boolean {
     if (!nose) return false;
 
-    // Hand must be DIRECTLY on top of head (above nose, close horizontally)
+    // ONE HAND ON HEAD: Hand should be on or near the top of head
+    // Hand should be above nose but not too far above (to distinguish from normal shot)
     const leftOnHead = lw
-      ? lw.y < nose.y - 20 && // Above the nose
-        Math.abs(lw.x - nose.x) < 60 && // Horizontally close to center
-        Math.hypot(lw.x - nose.x, lw.y - nose.y) < 100 // Overall close
+      ? lw.y < nose.y + 20 && // At or above nose level (allow some tolerance below)
+        lw.y > nose.y - 80 && // But not too far above (prevent normal shots)
+        Math.abs(lw.x - nose.x) < 50 && // Reasonable horizontal tolerance
+        Math.hypot(lw.x - nose.x, lw.y - nose.y) < 70 // Reasonable overall distance
       : false;
     const rightOnHead = rw
-      ? rw.y < nose.y - 20 && // Above the nose
-        Math.abs(rw.x - nose.x) < 60 && // Horizontally close to center
-        Math.hypot(rw.x - nose.x, rw.y - nose.y) < 100 // Overall close
+      ? rw.y < nose.y + 20 && // At or above nose level (allow some tolerance below)
+        rw.y > nose.y - 80 && // But not too far above (prevent normal shots)
+        Math.abs(rw.x - nose.x) < 50 && // Reasonable horizontal tolerance
+        Math.hypot(rw.x - nose.x, rw.y - nose.y) < 70 // Reasonable overall distance
       : false;
 
+    // ONE HAND ON HEAD: Only one hand needed, but must be reasonably close
     return leftOnHead || rightOnHead;
   }
 
@@ -711,6 +878,19 @@ export default function WebcamGestureDetector({
           poses = await detector.estimatePoses(video, opts);
           lastInferTsRef.current = now;
           lastDetectionsRef.current = poses;
+          
+          // Collect frames for Gemini analysis (keep last 3 seconds at ~30fps = 90 frames)
+          if (useGemini && poses.length > 0) {
+            const frameNumber = poseFrameBufferRef.current.length;
+            const timestamp = now / 1000; // Use absolute timestamp
+            const frame = movenetPoseToFrame(poses[0], frameNumber, timestamp);
+            poseFrameBufferRef.current.push(frame);
+            
+            // Keep only last 90 frames (3 seconds)
+            if (poseFrameBufferRef.current.length > 90) {
+              poseFrameBufferRef.current.shift();
+            }
+          }
         } catch {}
       }
 
@@ -732,6 +912,8 @@ export default function WebcamGestureDetector({
           lastPlayerPosesRef.current[label] = null;
           resetDebugInfo(label);
           setCurrentShotTypes((prev) => ({ ...prev, [label]: null }));
+          // Clear gesture history when pose is lost
+          gestureHistoryRef.current[label] = [];
           return;
         }
 
@@ -742,24 +924,62 @@ export default function WebcamGestureDetector({
           [label]: debugInfo.shotType,
         }));
 
+        // Add to gesture history for majority voting (every frame when decision is true)
+        if (decision && debugInfo.shotType) {
+          const history = gestureHistoryRef.current[label];
+          history.push({
+            shotType: debugInfo.shotType,
+            timestamp: nowTs
+          });
+          
+          // Clean old entries (older than 2 seconds)
+          const cutoff = nowTs - 2000;
+          gestureHistoryRef.current[label] = history.filter(entry => entry.timestamp > cutoff);
+        }
+
         if (decision) {
           showShotIndicator(label);
         }
+        
         const cooldownUntil = gestureCooldownsRef.current[label] ?? 0;
         if (nowTs >= cooldownUntil && decision) {
-          gestureCooldownsRef.current[label] = nowTs + 1500;
-          const shotType = debugInfoRef.current[label].shotType;
-          onShootGesture?.(label, shotType);
-          if (debug) {
-            const shotTypeLabel = shotType
-              ? ` (${shotType.toUpperCase()})`
-              : "";
-            eventsRef.current.push({
-              ts: nowTs,
-              label: `Shot detected${shotTypeLabel} · ${label}`,
-              player: label,
-            });
-            if (eventsRef.current.length > 20) eventsRef.current.shift();
+          // Use majority voting instead of last frame's shot type
+          const majorityShotType = getMajorityGesture(label, 1500);
+          
+          if (majorityShotType) {
+            gestureCooldownsRef.current[label] = nowTs + 1500;
+            onShootGesture?.(label, majorityShotType);
+            
+            // Clear history after triggering to prevent re-triggering
+            gestureHistoryRef.current[label] = [];
+            
+            // Trigger Gemini analysis if enabled
+            if (useGemini && poseFrameBufferRef.current.length > 0) {
+              const framesToAnalyze = [...poseFrameBufferRef.current];
+              analyzeMotionWithGemini(framesToAnalyze, true).then((analysis) => {
+                if (analysis) {
+                  setGeminiAnalysis({
+                    ...analysis,
+                    timestamp: Date.now()
+                  });
+                  console.log('[Gemini] Analysis:', analysis);
+                }
+              }).catch((error) => {
+                console.error('[Gemini] Analysis failed:', error);
+              });
+            }
+            
+            if (debug) {
+              const shotTypeLabel = majorityShotType
+                ? ` (${majorityShotType.toUpperCase()})`
+                : "";
+              eventsRef.current.push({
+                ts: nowTs,
+                label: `Shot detected${shotTypeLabel} · ${label}`,
+                player: label,
+              });
+              if (eventsRef.current.length > 20) eventsRef.current.shift();
+            }
           }
         }
         lastPlayerPosesRef.current[label] = pose;
@@ -953,6 +1173,8 @@ export default function WebcamGestureDetector({
           </div>
         </div>
       ) : null}
+      
+      {/* Gemini Analysis Display - Hidden for now (disabled) */}
     </div>
   );
 }

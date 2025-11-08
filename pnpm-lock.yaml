@@ -11,6 +11,9 @@ importers:
       '@auth/mongodb-adapter':
         specifier: ^3.11.1
         version: 3.11.1(mongodb@6.20.0)
+      '@google/generative-ai':
+        specifier: ^0.21.0
+        version: 0.21.0
       '@mediapipe/pose':
         specifier: ~0.5.0
         version: 0.5.1675469404
@@ -113,6 +116,10 @@ packages:
   '@babel/runtime@7.28.4':
     resolution: {integrity: sha512-Q/N6JNWvIvPnLDvjlE1OUBLPQHH6l3CltCEsHIujp45zQUSSh8K+gHnaEX45yAT1nyngnINhvWtzN+Nb9D8RAQ==}
     engines: {node: '>=6.9.0'}
+
+  '@google/generative-ai@0.21.0':
+    resolution: {integrity: sha512-7XhUbtnlkSEZK15kN3t+tzIMxsbKm/dSkKBFalj+20NvPKe1kBY7mR2P7vuijEn+f06z5+A8bVGKO0v39cr6Wg==}
+    engines: {node: '>=18.0.0'}
 
   '@isaacs/cliui@8.0.2':
     resolution: {integrity: sha512-O8jcjabXaleOG9DQ0+ARXWZBTfnP4WNAqzuiJK7ll44AmxGKv/J2M4TPjxjY3znBCfvBXFzucm1twdyFybFqEA==}
@@ -1187,6 +1194,8 @@ snapshots:
       - nodemailer
 
   '@babel/runtime@7.28.4': {}
+
+  '@google/generative-ai@0.21.0': {}
 
   '@isaacs/cliui@8.0.2':
     dependencies:

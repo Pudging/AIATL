@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import { motion } from "framer-motion";
 import type { ParsedGameState } from "@/components/types";
 import WebcamGestureDetector from "@/components/WebcamGestureDetector";
 import ScoreAnimation from "@/components/ScoreAnimation";
 import ShotIncomingOverlay from "@/components/ShotIncomingOverlay";
 import ShotResultOverlay from "@/components/ShotResultOverlay";
 import PointsEarnedOverlay from "@/components/PointsEarnedOverlay";
+import MultiPlayerPointsOverlay from "@/components/MultiPlayerPointsOverlay";
 
 export default function GameViewPage() {
   const PLAYER_LABELS = [
@@ -28,10 +30,14 @@ export default function GameViewPage() {
   const [error, setError] = useState<string | null>(null);
   const [pointsByPlayer, setPointsByPlayer] = useState<
     Record<PlayerLabel, number>
-  >({
-    "Left Player": 0,
-    "Right Player": 0,
-    "Center Player": 0,
+  >(() => {
+    // For test game, start at 100k
+    const isTest = id?.toUpperCase() === 'TEST001';
+    return {
+      "Left Player": isTest ? 100000 : 0,
+      "Right Player": isTest ? 100000 : 0,
+      "Center Player": isTest ? 100000 : 0,
+    };
   });
   const [activeLabels, setActiveLabels] = useState<PlayerLabel[]>([
     "Left Player",
@@ -61,6 +67,13 @@ export default function GameViewPage() {
   const [pointsEarnedLabel, setPointsEarnedLabel] = useState<string | null>(
     null
   );
+  const [playerPointsDisplay, setPlayerPointsDisplay] = useState<
+    Record<PlayerLabel, { show: boolean; points: number }>
+  >({
+    "Left Player": { show: false, points: 0 },
+    "Right Player": { show: false, points: 0 },
+    "Center Player": { show: false, points: 0 },
+  });
   const [lanePoints, setLanePoints] = useState<
     Record<PlayerLabel, number | null>
   >({
@@ -289,6 +302,26 @@ export default function GameViewPage() {
             });
             return next;
           });
+          
+          // Show individual overlays for each player
+          setPlayerPointsDisplay((prev) => {
+            const next = { ...prev };
+            labelsWithPrediction.forEach((label) => {
+              next[label] = { show: true, points: delta };
+            });
+            return next;
+          });
+          
+          // Hide overlays after 2.5 seconds
+          setTimeout(() => {
+            setPlayerPointsDisplay({
+              "Left Player": { show: false, points: 0 },
+              "Right Player": { show: false, points: 0 },
+              "Center Player": { show: false, points: 0 },
+            });
+          }, 2500);
+          
+          // Keep old single overlay for backwards compatibility (can remove later)
           setPointsEarned(delta);
           setPointsEarnedLabel(
             labelsWithPrediction.length === 1
@@ -976,23 +1009,76 @@ export default function GameViewPage() {
         <WebcamGestureDetector
           debug
           extraContent={
-            <div className="flex flex-wrap items-stretch justify-center gap-4">
-              {activeLabels.map((label) => (
-                <div
-                  key={label}
-                  className="flex flex-col items-center justify-center rounded-xl bg-slate-900/70 border border-white/10 px-4 py-3 min-w-[140px]"
-                >
-                  <div
-                    className="text-[10px] uppercase tracking-wider font-semibold mb-1"
-                    style={{ color: LABEL_COLORS[label] }}
+            <div className="flex flex-wrap items-stretch justify-center gap-2 md:gap-3 w-full max-w-7xl mx-auto px-2">
+              {activeLabels.map((label) => {
+                const points = pointsByPlayer[label] ?? 0;
+                const digitCount = points.toLocaleString().length;
+                const playerCount = activeLabels.length;
+                
+                // Dynamic text size based on digit count AND player count
+                const getTextSize = () => {
+                  if (playerCount === 3) {
+                    // Smaller sizes for 3 players
+                    if (digitCount <= 4) return "text-3xl sm:text-4xl md:text-5xl lg:text-6xl";
+                    if (digitCount <= 6) return "text-2xl sm:text-3xl md:text-4xl lg:text-5xl";
+                    if (digitCount <= 8) return "text-xl sm:text-2xl md:text-3xl lg:text-4xl";
+                    return "text-lg sm:text-xl md:text-2xl lg:text-3xl";
+                  } else {
+                    // Larger sizes for 1-2 players
+                    if (digitCount <= 4) return "text-5xl sm:text-6xl md:text-7xl lg:text-8xl";
+                    if (digitCount <= 6) return "text-4xl sm:text-5xl md:text-6xl lg:text-7xl";
+                    if (digitCount <= 8) return "text-3xl sm:text-4xl md:text-5xl lg:text-6xl";
+                    return "text-2xl sm:text-3xl md:text-4xl lg:text-5xl";
+                  }
+                };
+                
+                // Dynamic width based on player count
+                const getWidthClasses = () => {
+                  if (playerCount === 3) {
+                    return "flex-1 min-w-[110px] max-w-[180px]";
+                  } else if (playerCount === 2) {
+                    return "flex-1 min-w-[140px] max-w-[280px]";
+                  } else {
+                    return "flex-1 min-w-[160px] max-w-[320px]";
+                  }
+                };
+                
+                return (
+                  <motion.div
+                    key={label}
+                    className={`${getWidthClasses()} flex flex-col items-center justify-center rounded-xl bg-slate-900/70 border-2 border-white/10 px-3 py-2`}
+                    style={{
+                      borderColor: LABEL_COLORS[label],
+                      boxShadow: `0 0 20px ${LABEL_COLORS[label]}40`,
+                    }}
+                    animate={{
+                      scale: playerPointsDisplay[label].show ? [1, 1.05, 1] : 1,
+                    }}
+                    transition={{ duration: 0.3 }}
                   >
-                    {label}
-                  </div>
-                  <div className="text-6xl md:text-7xl lg:text-8xl font-extrabold text-white leading-none">
-                    {pointsByPlayer[label] ?? 0}
-                  </div>
-                </div>
-              ))}
+                    <div
+                      className="text-[10px] uppercase tracking-wider font-semibold mb-1 whitespace-nowrap"
+                      style={{ color: LABEL_COLORS[label] }}
+                    >
+                      {label}
+                    </div>
+                    <motion.div
+                      className={`${getTextSize()} font-extrabold text-white leading-none tabular-nums`}
+                      key={points}
+                      initial={{ scale: 1 }}
+                      animate={{ 
+                        scale: playerPointsDisplay[label].show ? [1, 1.3, 1] : 1,
+                        color: playerPointsDisplay[label].show 
+                          ? (playerPointsDisplay[label].points > 0 ? "#10b981" : "#ef4444")
+                          : "#ffffff"
+                      }}
+                      transition={{ duration: 0.5 }}
+                    >
+                      {points.toLocaleString()}
+                    </motion.div>
+                  </motion.div>
+                );
+              })}
             </div>
           }
           onActiveLabelsChange={(labels) => setActiveLabels(labels)}
@@ -1024,9 +1110,30 @@ export default function GameViewPage() {
       {/* Shot Result Overlay */}
       <ShotResultOverlay show={showShotResult} shotData={currentShotData} />
 
-      {/* Points Earned Overlay */}
+      {/* Multi-Player Points Overlays */}
+      <MultiPlayerPointsOverlay
+        players={[
+          {
+            label: "Left Player",
+            points: playerPointsDisplay["Left Player"].points,
+            show: playerPointsDisplay["Left Player"].show,
+          },
+          {
+            label: "Right Player",
+            points: playerPointsDisplay["Right Player"].points,
+            show: playerPointsDisplay["Right Player"].show,
+          },
+          {
+            label: "Center Player",
+            points: playerPointsDisplay["Center Player"].points,
+            show: playerPointsDisplay["Center Player"].show,
+          },
+        ]}
+      />
+
+      {/* Points Earned Overlay (old, keeping for backwards compatibility) */}
       <PointsEarnedOverlay
-        show={showPointsEarned}
+        show={false}
         points={pointsEarned}
         label={pointsEarnedLabel ?? undefined}
       />

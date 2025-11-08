@@ -1370,37 +1370,30 @@ export default function GameViewPage() {
             </div>
 
             {/* Join Code Display */}
-            <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-4">
-              <div className="text-xs uppercase tracking-[0.3em] text-emerald-200/80 mb-2">
-                Join Code
+            <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 p-4 flex flex-row">
+              <div className="text-xs uppercase tracking-[0.3em] text-emerald-200/80 my-2 grow">
+                Join Code {!joinCode && "Loading..."}
+                {joinCode && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(joinCode);
+                        // You could add a toast notification here
+                      } catch (err) {
+                        console.error("Failed to copy:", err);
+                      }
+                    }}
+                    className="rounded bg-emerald-500/20 px-3 mx-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-emerald-200 hover:bg-emerald-500/30 transition"
+                  >
+                    Copy
+                  </button>
+                )}
               </div>
-              {joinCode ? (
-                <>
-                  <div className="flex items-center justify-between">
-                    <div className="text-2xl font-mono font-bold text-emerald-300">
-                      {joinCode}
-                    </div>
-                    <button
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(joinCode);
-                          // You could add a toast notification here
-                        } catch (err) {
-                          console.error("Failed to copy:", err);
-                        }
-                      }}
-                      className="rounded bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-emerald-200 hover:bg-emerald-500/30 transition"
-                    >
-                      Copy
-                    </button>
+              {joinCode && (
+                <div className="flex items-center justify-between">
+                  <div className="text-4xl font-mono font-bold text-emerald-300">
+                    {joinCode}
                   </div>
-                  <div className="mt-2 text-xs text-emerald-200/60">
-                    Share this code with players to join the game
-                  </div>
-                </>
-              ) : (
-                <div className="text-sm text-emerald-200/60">
-                  Loading join code...
                 </div>
               )}
             </div>
@@ -1428,7 +1421,7 @@ export default function GameViewPage() {
                     }
                     className="mlb-range w-full appearance-none"
                   />
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-between px-[2px]">
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-between px-[2px] pt-3.5">
                     {Array.from({ length: 7 }).map((_, index) => (
                       <svg
                         key={index}
@@ -2143,7 +2136,7 @@ export default function GameViewPage() {
                       );
                     })}
                   </div>
-                  <div className="border border-[#1e2f46] bg-[#0b1527] p-4 text-sm text-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.55)]">
+                  {/*<div className="border border-[#1e2f46] bg-[#0b1527] p-4 text-sm text-slate-100 shadow-[0_20px_50px_rgba(0,0,0,0.55)]">
                     <div className="flex items-center justify-between font-semibold uppercase tracking-[0.2em] text-emerald-200/80">
                       <span>Stream Delay (seconds)</span>
                       <span>{streamDelay}s</span>
@@ -2174,7 +2167,7 @@ export default function GameViewPage() {
                     >
                       Test Win Sound
                     </button>
-                  </div>
+                  </div> */}
                 </>
               }
               onActiveLabelsChange={(labels: PlayerLabel[]) =>

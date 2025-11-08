@@ -3,3 +3,4 @@ onlyBuiltDependencies:
   - '@prisma/engines'
   - core-js
   - prisma
+  - unrs-resolver

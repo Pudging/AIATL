@@ -133,7 +133,8 @@ export default function HomePage() {
     },
   };
 
-  const allGames = games.length > 0 ? games : [testGame, testGame2];
+  // Always include test games alongside live games
+  const allGames = [...games, testGame, testGame2];
 
   return (
     <div
@@ -228,9 +229,8 @@ export default function HomePage() {
         {error && !loading && <ErrorState message={error} />}
 
         {!loading && !error && games.length === 0 && (
-          <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-200">
-            No live games right now. We dropped in a test matchup so you can
-            still preview the experience.
+          <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-4 text-sm text-emerald-200">
+            <strong>Test games available:</strong> Try TEST001 (scrubber mode) or TEST002 (real playoff data with sync).
           </div>
         )}
 
@@ -239,14 +239,14 @@ export default function HomePage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs uppercase tracking-[0.5em] text-emerald-200">
-                  Live slips
+                  Live slips {games.length > 0 && `+ Test games`}
                 </p>
                 <h2 className="text-2xl font-bold text-white">
-                  Tonight&apos;s board
+                  {games.length > 0 ? "Tonight's board" : "Test games"}
                 </h2>
               </div>
               <span className="text-sm text-emerald-200/80">
-                Auto-refreshing every 10s
+                {games.length > 0 && "Auto-refreshing every 10s"}
               </span>
             </div>
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">

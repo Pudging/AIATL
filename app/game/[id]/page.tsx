@@ -1082,8 +1082,11 @@ export default function GameViewPage() {
             setState(latestState);
             setDelayedUpdateCount((prev) => prev + 1);
             
-            // Detect shots even without sync (e.g., before user syncs)
-            detectNewShot(latestState, latestItem.timestamp, true);
+            // Only detect from delayed state for test games when not synced
+            // Live games without sync still use live data detection (line 1028)
+            if (isTestGame || isTest002) {
+              detectNewShot(latestState, latestItem.timestamp, true);
+            }
           }
         }
         return;

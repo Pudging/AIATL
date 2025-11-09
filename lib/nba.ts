@@ -68,8 +68,19 @@ export async function fetchBoxScore(gameId: string): Promise<any> {
 
 export function simplifyScoreboard(scoreboardJson: any): SimplifiedGame[] {
   const games = scoreboardJson?.scoreboard?.games ?? [];
+  console.log('[NBA] Raw games count:', games.length);
+  console.log('[NBA] Sample game statuses:', games.slice(0, 3).map((g: any) => ({
+    id: g.gameId,
+    status: g.gameStatus,
+    statusText: g.gameStatusText
+  })));
+  
   return games
-    .filter((g: any) => g.gameStatus === 2) // only live
+    .filter((g: any) => {
+      // gameStatus: 1 = not started, 2 = live, 3 = finished
+      // Include live games and games that are about to start
+      return g.gameStatus === 2 || g.gameStatus === 1;
+    })
     .map((g: any) => {
       const gameId = g.gameId as string;
       const home = g.homeTeam;

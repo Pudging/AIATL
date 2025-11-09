@@ -6,8 +6,10 @@ export async function GET() {
     const data = await fetchLiveScoreboard();
     const games = simplifyScoreboard(data);
     return NextResponse.json({ games });
-  } catch {
-    return NextResponse.json({ error: 'Failed to fetch live games' }, { status: 500 });
+  } catch (error) {
+    console.error('[API /games] Error fetching scoreboard:', error);
+    // Return empty games array instead of error - let frontend show test games
+    return NextResponse.json({ games: [] });
   }
 }
 

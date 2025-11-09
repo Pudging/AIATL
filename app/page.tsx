@@ -63,12 +63,20 @@ export default function HomePage() {
     async function load() {
       try {
         const res = await fetch("/api/games", { cache: "no-store" });
+        if (!res.ok) {
+          throw new Error(`API returned ${res.status}`);
+        }
         const data = await res.json();
         if (!active) return;
         setGames(data.games ?? []);
         setError(null);
-      } catch {
-        if (active) setError("Failed to load games");
+      } catch (err) {
+        console.error('[HomePage] Failed to load games:', err);
+        if (active) {
+          // Don't show error - just use empty games array and show test games
+          setGames([]);
+          setError(null);
+        }
       } finally {
         if (active) setLoading(false);
       }

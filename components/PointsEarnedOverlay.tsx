@@ -73,49 +73,6 @@ export default function PointsEarnedOverlay({ show, points, label }: Props) {
               transition={{ duration: 1, repeat: Infinity }}
             />
 
-            {/* Points container */}
-            <div
-              className={`relative rounded-3xl p-8 border-4 border-white shadow-2xl ${
-                isPositive
-                  ? "bg-gradient-to-br from-yellow-400 via-orange-500 to-red-500"
-                  : "bg-gradient-to-br from-red-500 via-orange-500 to-yellow-500"
-              }`}
-            >
-              <motion.div
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.2 }}
-                className="text-center"
-              >
-                <div
-                  className={`text-2xl font-bold text-white mb-1 uppercase tracking-wider`}
-                >
-                  {isPositive ? "Points Earned!" : "Points Lost"}
-                </div>
-                {label ? (
-                  <div className="text-sm text-white/90 mb-2">{label}</div>
-                ) : null}
-                <motion.div
-                  animate={{
-                    scale: [1, 1.1, 1],
-                    textShadow: [
-                      "0 0 20px rgba(255,255,255,0.8)",
-                      "0 0 40px rgba(255,255,255,1)",
-                      "0 0 20px rgba(255,255,255,0.8)",
-                    ],
-                  }}
-                  transition={{ duration: 0.8, repeat: Infinity }}
-                  className={`text-8xl font-black ${
-                    isPositive ? "text-white" : "text-white"
-                  }`}
-                  style={{ textShadow: "0 0 30px rgba(255,255,255,0.9)" }}
-                >
-                  {isPositive ? "+" : "−"}
-                  {absPoints}
-                </motion.div>
-              </motion.div>
-            </div>
-
             {/* Sparkles */}
             {[...Array(30)].map((_, i) => (
               <motion.div

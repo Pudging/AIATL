@@ -234,7 +234,7 @@ export function useShotExperience({
             if (!isMade) {
               playSound("lose");
             } else {
-              playSound("score");
+              playSound("point");
               setTimeout(() => {
                 dispatch({ type: "PATCH", payload: { showMoneyRain: false } });
               }, 3000);
@@ -552,7 +552,7 @@ function persistShotsForPlayers({
           predictedGesture: undefined,
         },
         points: {
-          predicted: predictionsRef.current[label]?.slice(-1)[0]?.points ?? 0,
+          predicted: 0,
         },
       }))
       .map((entry) => ({

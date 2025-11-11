@@ -55,10 +55,13 @@ const PLAYER_ACCENT_COLORS: Record<PlayerLabel, string> = {
 };
 
 function createPlayerMap<T>(initializer: (label: PlayerLabel) => T) {
-  return PLAYER_LABELS.reduce((acc, label) => {
-    acc[label] = initializer(label);
-    return acc;
-  }, {} as Record<PlayerLabel, T>);
+  return PLAYER_LABELS.reduce(
+    (acc, label) => {
+      acc[label] = initializer(label);
+      return acc;
+    },
+    {} as Record<PlayerLabel, T>
+  );
 }
 
 type Props = {
@@ -223,8 +226,8 @@ export default function WebcamGestureDetector({
         model === "SINGLE_THUNDER"
           ? (posedetection.movenet as any).modelType.SINGLEPOSE_THUNDER
           : model === "MULTI_LIGHTNING"
-          ? (posedetection.movenet as any).modelType.MULTIPOSE_LIGHTNING
-          : (posedetection.movenet as any).modelType.SINGLEPOSE_LIGHTNING,
+            ? (posedetection.movenet as any).modelType.MULTIPOSE_LIGHTNING
+            : (posedetection.movenet as any).modelType.SINGLEPOSE_LIGHTNING,
     };
     detectorRef.current = await posedetection.createDetector(
       posedetection.SupportedModels.MoveNet,
@@ -326,14 +329,17 @@ export default function WebcamGestureDetector({
         .slice()
         .sort((a, b) => getPoseCenterX(a) - getPoseCenterX(b));
       const videoWidth = videoRefs.current[0]?.videoWidth || 640;
-      const fallbackTargets = activeLabels.reduce((acc, label, index) => {
-        const ratio =
-          activeLabels.length === 1
-            ? 0.5
-            : (index + 1) / (activeLabels.length + 1);
-        acc[label] = videoWidth * ratio;
-        return acc;
-      }, {} as Record<PlayerLabel, number>);
+      const fallbackTargets = activeLabels.reduce(
+        (acc, label, index) => {
+          const ratio =
+            activeLabels.length === 1
+              ? 0.5
+              : (index + 1) / (activeLabels.length + 1);
+          acc[label] = videoWidth * ratio;
+          return acc;
+        },
+        {} as Record<PlayerLabel, number>
+      );
       const prevCenters = createPlayerMap((label) =>
         getPoseCenterX(lastPlayerPosesRef.current[label])
       );
@@ -350,7 +356,7 @@ export default function WebcamGestureDetector({
           const prevCenter = prevCenters[label];
           const target = Number.isFinite(prevCenter)
             ? prevCenter
-            : fallbackTargets[label] ?? videoWidth / 2;
+            : (fallbackTargets[label] ?? videoWidth / 2);
           const distance = Math.abs(center - target);
           if (distance < bestDistance) {
             bestDistance = distance;
@@ -923,10 +929,13 @@ export default function WebcamGestureDetector({
       draw(assignments, contexts, prevPlayerPoses);
       lastDetectionsRef.current = poses;
 
-      const assignmentPoseMap = assignments.reduce((acc, assignment) => {
-        acc[assignment.label] = assignment.pose;
-        return acc;
-      }, {} as Record<PlayerLabel, posedetection.Pose | null>);
+      const assignmentPoseMap = assignments.reduce(
+        (acc, assignment) => {
+          acc[assignment.label] = assignment.pose;
+          return acc;
+        },
+        {} as Record<PlayerLabel, posedetection.Pose | null>
+      );
       const nowTs = Date.now();
       activeLabels.forEach((label) => {
         const pose = assignmentPoseMap[label];
@@ -1056,6 +1065,7 @@ export default function WebcamGestureDetector({
         <video
           ref={assignVideoRef(0)}
           className="h-full w-full object-cover"
+          style={{ transform: "scaleX(-1)" }}
           muted
           playsInline
           autoPlay
@@ -1063,6 +1073,7 @@ export default function WebcamGestureDetector({
         <canvas
           ref={assignCanvasRef(0)}
           className="pointer-events-none absolute inset-0 h-full w-full"
+          style={{ transform: "scaleX(-1)" }}
         />
         <div className="pointer-events-none absolute inset-0">
           {activeLabels.map((label, index) => {
@@ -1070,10 +1081,10 @@ export default function WebcamGestureDetector({
               activeLabels.length === 1
                 ? "left-1/2 -translate-x-1/2"
                 : index === 0
-                ? "left-3"
-                : index === activeLabels.length - 1
-                ? "right-3"
-                : "left-1/2 -translate-x-1/2";
+                  ? "left-3"
+                  : index === activeLabels.length - 1
+                    ? "right-3"
+                    : "left-1/2 -translate-x-1/2";
             const shotType = currentShotTypes[label];
 
             return (
@@ -1084,15 +1095,15 @@ export default function WebcamGestureDetector({
                       shotType === "dunk"
                         ? "bg-purple-500/90 text-white"
                         : shotType === "layup"
-                        ? "bg-blue-500/90 text-white"
-                        : "bg-green-500/90 text-white"
+                          ? "bg-blue-500/90 text-white"
+                          : "bg-green-500/90 text-white"
                     }`}
                   >
                     {shotType === "dunk"
                       ? "🏀 DUNK"
                       : shotType === "layup"
-                      ? "🤾 LAYUP"
-                      : "🎯 SHOT"}
+                        ? "🤾 LAYUP"
+                        : "🎯 SHOT"}
                   </div>
                 )}
               </div>
@@ -1165,8 +1176,8 @@ export default function WebcamGestureDetector({
                         isPositive
                           ? "text-green-400"
                           : isNegative
-                          ? "text-red-400"
-                          : "text-white/80"
+                            ? "text-red-400"
+                            : "text-white/80"
                       }`}
                       style={{ fontSize: "2.75rem" }}
                     >
